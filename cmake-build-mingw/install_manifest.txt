@@ -1,0 +1,2 @@
+/home/kyle/Desktop/Code/nordvpn-windows-native/package/./OpenNord.exe
+/home/kyle/Desktop/Code/nordvpn-windows-native/package/./OpenNordService.exe

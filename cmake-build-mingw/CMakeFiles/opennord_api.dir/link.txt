@@ -1,0 +1,2 @@
+/usr/bin/x86_64-w64-mingw32-ar qc libopennord_api.a CMakeFiles/opennord_api.dir/opennord_api_autogen/mocs_compilation.cpp.obj CMakeFiles/opennord_api.dir/src/api/NordApiClient.cpp.obj CMakeFiles/opennord_api.dir/src/api/ResponseVerifier.cpp.obj
+/usr/bin/x86_64-w64-mingw32-ranlib libopennord_api.a

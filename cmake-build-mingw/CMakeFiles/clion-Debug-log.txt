@@ -1,0 +1,4 @@
+cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=/home/kyle/Desktop/Code/nordvpn-windows-native/cmake/mingw-w64.cmake -DOPENNORD_BUILD_TESTS=OFF -G "Unix Makefiles" -S /home/kyle/Desktop/Code/nordvpn-windows-native -B /home/kyle/Desktop/Code/nordvpn-windows-native/cmake-build-mingw
+-- Configuring done (0.1s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/kyle/Desktop/Code/nordvpn-windows-native/cmake-build-mingw

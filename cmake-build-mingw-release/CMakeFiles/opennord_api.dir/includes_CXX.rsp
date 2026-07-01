@@ -1,0 +1,1 @@
+-I"/home/kyle/Desktop/Code/nordvpn-windows-native/cmake-build-mingw-release/opennord_api_autogen/include" -I"/home/kyle/Desktop/Code/nordvpn-windows-native/src" -isystem "/usr/x86_64-w64-mingw32/include/qt6/QtCore" -isystem "/usr/x86_64-w64-mingw32/include/qt6" -isystem "/usr/x86_64-w64-mingw32/lib/qt6/mkspecs/win32-g++" -isystem "/usr/x86_64-w64-mingw32/include/qt6/QtNetwork"

@@ -1,0 +1,50 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  common-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt
+        run: sudo apt-get update && sudo apt-get install -y ninja-build qt6-base-dev
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          arch: win64_msvc2022_64
+          cache: true
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Stage
+        shell: pwsh
+        run: |
+          cmake --install build --config Release --prefix staging
+          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-translations staging\OpenNord.exe
+          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-translations staging\OpenNordService.exe
+          Copy-Item LICENSE, README.md, SECURITY.md staging
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenNord-windows-x64
+          path: staging
+

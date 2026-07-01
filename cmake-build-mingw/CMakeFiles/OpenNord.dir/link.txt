@@ -1,0 +1,3 @@
+/usr/bin/cmake -E rm -f CMakeFiles/OpenNord.dir/objects.a
+/usr/bin/x86_64-w64-mingw32-ar qc CMakeFiles/OpenNord.dir/objects.a @CMakeFiles/OpenNord.dir/objects1.rsp
+/usr/bin/x86_64-w64-mingw32-g++ -g -mwindows -Wl,--whole-archive CMakeFiles/OpenNord.dir/objects.a -Wl,--no-whole-archive -o OpenNord.exe -Wl,--out-implib,libOpenNord.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles/OpenNord.dir/linkLibs.rsp

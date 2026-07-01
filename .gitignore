@@ -1,0 +1,8 @@
+/build/
+/staging/
+/installer/OpenNord-Setup.exe
+/.idea/
+/.vscode/
+*.user
+*.log
+

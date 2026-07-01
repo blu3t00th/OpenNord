@@ -1,0 +1,177 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 92,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 100,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 108,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 114,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 115,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 116,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 117,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 124,
+				"parent" : 0
+			}
+		]
+	},
+	"codemodelVersion" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : ".",
+			"paths" : 
+			[
+				"OpenNord.exe"
+			],
+			"targetId" : "OpenNord::@6890427a1f51a3e7e1df",
+			"targetIndex" : 0,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : ".",
+			"paths" : 
+			[
+				"OpenNordService.exe"
+			],
+			"targetId" : "OpenNordService::@6890427a1f51a3e7e1df",
+			"targetIndex" : 1,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 2,
+			"component" : "Unspecified",
+			"destination" : ".",
+			"paths" : 
+			[
+				"/usr/x86_64-w64-mingw32/lib/qt6/bin/Qt6Concurrent.dll",
+				"/usr/x86_64-w64-mingw32/lib/qt6/bin/Qt6Core.dll",
+				"/usr/x86_64-w64-mingw32/lib/qt6/bin/Qt6Gui.dll",
+				"/usr/x86_64-w64-mingw32/lib/qt6/bin/Qt6Network.dll",
+				"/usr/x86_64-w64-mingw32/lib/qt6/bin/Qt6Widgets.dll"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 3,
+			"component" : "Unspecified",
+			"destination" : "imageformats",
+			"paths" : 
+			[
+				"/usr/x86_64-w64-mingw32/lib/qt6/plugins/imageformats/qgif.dll",
+				"/usr/x86_64-w64-mingw32/lib/qt6/plugins/imageformats/qico.dll",
+				"/usr/x86_64-w64-mingw32/lib/qt6/plugins/imageformats/qjpeg.dll"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 4,
+			"component" : "Unspecified",
+			"destination" : "networkinformation",
+			"paths" : 
+			[
+				"/usr/x86_64-w64-mingw32/lib/qt6/plugins/networkinformation/qnetworklistmanager.dll"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 5,
+			"component" : "Unspecified",
+			"destination" : "platforms",
+			"paths" : 
+			[
+				"/usr/x86_64-w64-mingw32/lib/qt6/plugins/platforms/qwindows.dll"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 6,
+			"component" : "Unspecified",
+			"destination" : "styles",
+			"paths" : 
+			[
+				"/usr/x86_64-w64-mingw32/lib/qt6/plugins/styles/qmodernwindowsstyle.dll"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 7,
+			"component" : "Unspecified",
+			"destination" : "tls",
+			"paths" : 
+			[
+				"/usr/x86_64-w64-mingw32/lib/qt6/plugins/tls/qcertonlybackend.dll",
+				"/usr/x86_64-w64-mingw32/lib/qt6/plugins/tls/qschannelbackend.dll"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 8,
+			"component" : "Unspecified",
+			"scriptFile" : "cmake-build-mingw/InstallMinGWRuntime.cmake",
+			"type" : "script"
+		}
+	],
+	"paths" : 
+	{
+		"build" : ".",
+		"source" : "."
+	}
+}

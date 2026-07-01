@@ -1,0 +1,2 @@
+/usr/bin/x86_64-w64-mingw32-ar qc libopennord_windows.a CMakeFiles/opennord_windows.dir/opennord_windows_autogen/mocs_compilation.cpp.obj CMakeFiles/opennord_windows.dir/src/windows/Security.cpp.obj
+/usr/bin/x86_64-w64-mingw32-ranlib libopennord_windows.a

@@ -1,0 +1,1 @@
+ libopennord_common.a libopennord_api.a libopennord_windows.a -ladvapi32 -lshell32 libopennord_common.a "/usr/x86_64-w64-mingw32/lib/libQt6Network.dll.a" "/usr/x86_64-w64-mingw32/lib/libQt6Core.dll.a" -lmpr -luserenv -lws2_32 -lbcrypt -lcrypt32 -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 
