@@ -1,3 +1,7 @@
+<img width="1839" height="1187" alt="image" src="https://github.com/user-attachments/assets/d82df6ee-6c94-46db-8a83-00a05ab28f9d" />
+
+<img width="1651" height="1183" alt="image" src="https://github.com/user-attachments/assets/c03b1c40-32da-490f-bde3-8d647dcb086a" />
+
 ## NOTE
 This program still has some bugs, and I will fix them later when I have time. Contributions are also welcome. The application is working, but I plan to add more features, including a proper login page instead of requiring only an access token.
 
