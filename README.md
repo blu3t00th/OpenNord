@@ -1,5 +1,5 @@
 ## NOTE
-This program has alot of bugs i will fix them later when i have time or someone can contribute, but its working.
+This program still has some bugs, and I will fix them later when I have time. Contributions are also welcome. The application is working, but I plan to add more features, including a proper login page instead of requiring only an access token.
 
 # OpenNord for Windows — native C++ client
 
