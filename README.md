@@ -2,8 +2,9 @@
 
 <img width="1839" height="1187" alt="image" src="https://github.com/user-attachments/assets/d82df6ee-6c94-46db-8a83-00a05ab28f9d" />
 
-## NOTE
-This program still has some bugs, and I will fix them later when I have time. Contributions are also welcome. The application is working, but I plan to add more features, including a proper login page instead of requiring only an access token.
+OpenNord is under active development. Review the security notes and test a
+release before relying on it for VPN connectivity. Login currently uses a
+manual Nord access token.
 
 # OpenNord for Windows — native C++ client
 
@@ -89,21 +90,36 @@ Logs never include access-token contents and are written to:
 
 ## Package
 
-After deploying Qt DLLs into `staging`, build the NSIS installer:
+After deploying Qt DLLs into a fresh `staging` directory, copy the documentation
+and build with PowerShell 7 and NSIS 3.09 or newer:
 
 ```powershell
-makensis /DSTAGING="$PWD\staging" installer\OpenNord.nsi
+Copy-Item LICENSE, README.md, SECURITY.md staging
+./scripts/Package-Windows.ps1
 ```
 
+This creates `dist/OpenNord-Setup.exe`, a portable ZIP, and SHA-256 checksums.
+The installer removes only the files that were included in its payload.
 The installer requires elevation only to install the service. The GUI manifest
 uses `asInvoker` and normally runs without administrator privileges.
+
+CI artifacts are unsigned development builds. See
+[`docs/RELEASING.md`](docs/RELEASING.md) for certificate signing and release
+verification. Build directories and packaged executables are generated outputs;
+they must not be committed to the source repository.
+
+If Microsoft Defender detects a named threat, keep the detected file
+quarantined and record the threat name and affected file from Protection
+History. A detection needs investigation; signing does not prove a file is
+safe or guarantee that Defender will accept it. See
+[`SECURITY.md`](SECURITY.md#windows-defender-detections).
 
 ## Scope
 
 This repository implements standard NordLynx and OpenVPN UDP/TCP connection paths. It is
 not yet feature parity with the full Nord product. Obfuscated OpenVPN servers,
 Meshnet, dedicated IP/server support, per-process split tunneling, Threat
-Protection filtering, tray mode, ARM64 packaging, and signed updates remain
+Protection filtering, ARM64 packaging, and signed updates remain
 roadmap work and are not presented as available features.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and

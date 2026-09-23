@@ -9,7 +9,6 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
-#include <QSaveFile>
 #include <QThread>
 
 #include <windows.h>
@@ -51,7 +50,7 @@ bool WireGuardTunnel::connected() const
     SERVICE_STATUS_PROCESS status{};
     DWORD required{};
     if (!QueryServiceStatusEx(service.get(), SC_STATUS_PROCESS_INFO, reinterpret_cast<BYTE *>(&status), sizeof(status), &required)) return false;
-    return status.dwCurrentState == SERVICE_RUNNING || status.dwCurrentState == SERVICE_START_PENDING;
+    return status.dwCurrentState == SERVICE_RUNNING;
 }
 
 QString WireGuardTunnel::run(const QStringList &arguments, int timeoutMs) const
@@ -83,20 +82,13 @@ QString WireGuardTunnel::connect(const Credentials &credentials, const Server &s
         if (!error.isEmpty()) return error;
     }
     if (!QDir().mkpath(QFileInfo(configPath_).absolutePath())) return QStringLiteral("cannot create tunnel directory");
-    QSaveFile file(configPath_);
-    const auto bytes = config.value.toUtf8();
-    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit()) {
-        return QStringLiteral("cannot write WireGuard configuration");
-    }
     QString aclError;
-    if (!windows::applyPrivateFileAcl(configPath_, {}, false, aclError)) {
-        QFile::remove(configPath_);
-        return aclError;
-    }
+    if (!windows::writePrivateFile(configPath_, config.value.toUtf8(), aclError)) return aclError;
     const auto installError = run({QStringLiteral("/installtunnelservice"), QDir::toNativeSeparators(configPath_)}, 20000);
     if (!installError.isEmpty()) {
-        QFile::remove(configPath_);
-        return installError;
+        const auto rollbackError = disconnect();
+        return rollbackError.isEmpty() ? installError
+            : QStringLiteral("%1; rollback failed: %2").arg(installError, rollbackError);
     }
     QElapsedTimer timer;
     timer.start();

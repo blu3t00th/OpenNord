@@ -20,8 +20,8 @@ public:
     void setServiceAutoStartEnabled(bool enabled) { autoStartService_.store(enabled); }
 
 private:
-    [[nodiscard]] QJsonObject callBlocking(qint64 id, const QString &method, const QJsonObject &params,
-                                           bool allowStatusRetry = true) const;
+    [[nodiscard]] static QJsonObject callBlocking(qint64 id, const QString &method, const QJsonObject &params,
+                                                bool autoStartService, bool allowStatusRetry = true);
     qint64 nextId_{1};
     std::atomic_bool autoStartService_{true};
 };

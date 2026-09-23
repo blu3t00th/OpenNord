@@ -3,6 +3,9 @@
 #include "windows/WinHandle.h"
 
 #include <QScopeGuard>
+#include <QDir>
+#include <QFileInfo>
+#include <QUuid>
 #include <QVarLengthArray>
 
 #include <sddl.h>
@@ -103,11 +106,64 @@ bool applyPrivateFileAcl(const QString &path, const QString &userSid, bool userC
     return true;
 }
 
+bool writePrivateFile(const QString &path, const QByteArray &contents, QString &error)
+{
+    // Create with a protected DACL. Applying permissions after opening or writing
+    // allows another process to retain a readable handle to the secret file.
+    PSECURITY_DESCRIPTOR descriptor{};
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            L"D:P(A;;FA;;;SY)(A;;FA;;;BA)", SDDL_REVISION_1, &descriptor, nullptr)) {
+        error = QStringLiteral("cannot create private file ACL: %1").arg(lastErrorMessage());
+        return false;
+    }
+    const auto cleanup = qScopeGuard([&] { LocalFree(descriptor); });
+    SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), descriptor, FALSE};
+    const auto temporaryPath = path + u'.' + QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".tmp");
+    UniqueHandle file(CreateFileW(reinterpret_cast<LPCWSTR>(temporaryPath.utf16()), GENERIC_WRITE | DELETE,
+        0, &attributes, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr));
+    if (!file) {
+        error = QStringLiteral("cannot create private file: %1").arg(lastErrorMessage());
+        return false;
+    }
+    const auto removeTemporary = qScopeGuard([&] {
+        file.reset();
+        DeleteFileW(reinterpret_cast<LPCWSTR>(temporaryPath.utf16()));
+    });
+    qsizetype offset{};
+    while (offset < contents.size()) {
+        const auto chunk = static_cast<DWORD>(qMin<qsizetype>(contents.size() - offset, 1024 * 1024));
+        DWORD written{};
+        if (!WriteFile(file.get(), contents.constData() + offset, chunk, &written, nullptr) || written == 0) {
+            error = QStringLiteral("cannot write private file: %1").arg(lastErrorMessage());
+            return false;
+        }
+        offset += written;
+    }
+    if (!FlushFileBuffers(file.get())) {
+        error = QStringLiteral("cannot flush private file: %1").arg(lastErrorMessage());
+        return false;
+    }
+    const auto destination = QDir::toNativeSeparators(QFileInfo(path).absoluteFilePath());
+    QVarLengthArray<std::byte, 512> renameBuffer(sizeof(FILE_RENAME_INFO) + destination.size() * sizeof(wchar_t));
+    auto *rename = reinterpret_cast<FILE_RENAME_INFO *>(renameBuffer.data());
+    *rename = {};
+    rename->ReplaceIfExists = TRUE;
+    rename->FileNameLength = static_cast<DWORD>(destination.size() * sizeof(wchar_t));
+    destination.toWCharArray(rename->FileName);
+    rename->FileName[destination.size()] = L'\0';
+    if (!SetFileInformationByHandle(file.get(), FileRenameInfo, rename, static_cast<DWORD>(renameBuffer.size()))) {
+        error = QStringLiteral("cannot commit private file: %1").arg(lastErrorMessage());
+        return false;
+    }
+    error.clear();
+    return true;
+}
 SECURITY_ATTRIBUTES pipeSecurityAttributes(PSECURITY_DESCRIPTOR &descriptor, QString &error)
 {
     // LocalSystem and Administrators receive full access. Interactive users may
-    // read/write, but each request is associated with the impersonated user SID.
-    constexpr auto sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)";
+    // exchange data, but cannot create a competing server instance. GENERIC_WRITE
+    // includes FILE_CREATE_PIPE_INSTANCE for pipes, so use explicit client rights.
+    constexpr auto sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x12019b;;;IU)";
     SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), nullptr, FALSE};
     if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, SDDL_REVISION_1, &descriptor, nullptr)) {
         error = QStringLiteral("cannot create named-pipe ACL: %1").arg(lastErrorMessage());

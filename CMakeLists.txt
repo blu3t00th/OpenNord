@@ -68,12 +68,14 @@ if(WIN32)
         src/service/WindowsService.h
         src/service/WireGuardTunnel.cpp
         src/service/WireGuardTunnel.h
+        resources/opennord-service.rc
     )
     target_link_libraries(OpenNordService PRIVATE
         opennord_common opennord_api opennord_windows Qt6::Core Qt6::Network
         advapi32 shell32
     )
     target_compile_definitions(OpenNordService PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_include_directories(OpenNordService PRIVATE resources)
 
     qt_add_executable(OpenNord WIN32
         src/gui/MainWindow.cpp
@@ -91,7 +93,7 @@ if(WIN32)
 
     install(TARGETS OpenNord OpenNordService RUNTIME DESTINATION .)
 
-    if(MINGW)
+    if(MINGW AND CMAKE_CROSSCOMPILING)
         get_filename_component(OPENNORD_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
         set(OPENNORD_MINGW_RUNTIME_DIR "${OPENNORD_QT_PREFIX}/bin")
         set(OPENNORD_QT_BINARY_DIR "${OPENNORD_QT_PREFIX}/lib/qt6/bin")
@@ -132,5 +134,19 @@ if(OPENNORD_BUILD_TESTS)
         tests/CommonTests.cpp
     )
     target_link_libraries(opennord_tests PRIVATE opennord_common Qt6::Test)
+    set_target_properties(opennord_tests PROPERTIES WIN32_EXECUTABLE FALSE)
     add_test(NAME opennord_tests COMMAND opennord_tests)
+    if(WIN32)
+        qt_add_executable(opennord_security_tests tests/SecurityTests.cpp)
+        target_link_libraries(opennord_security_tests PRIVATE opennord_windows Qt6::Test)
+        target_compile_definitions(opennord_security_tests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+        add_test(NAME opennord_security_tests COMMAND opennord_security_tests)
+        qt_add_executable(opennord_gui_tests tests/GuiTests.cpp
+            src/gui/MainWindow.cpp src/gui/MainWindow.h src/gui/RpcClient.cpp src/gui/RpcClient.h)
+        target_link_libraries(opennord_gui_tests PRIVATE opennord_common opennord_windows
+            Qt6::Concurrent Qt6::Widgets Qt6::Test shell32)
+        target_compile_definitions(opennord_gui_tests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+        set_target_properties(opennord_security_tests opennord_gui_tests PROPERTIES WIN32_EXECUTABLE FALSE)
+        add_test(NAME opennord_gui_tests COMMAND opennord_gui_tests -platform offscreen)
+    endif()
 endif()

@@ -25,10 +25,21 @@ ConfigResult buildOpenVpnConfig(const QByteArray &signedProfile, const Server &s
     if (!endpoint.setAddress(server.station) || endpoint.protocol() != QAbstractSocket::IPv4Protocol) {
         return {{}, QStringLiteral("OpenVPN endpoint is not a valid IPv4 address")};
     }
-    static const QRegularExpression hostnamePattern(QStringLiteral("^[a-z]{2}[0-9]{1,6}\\.nordvpn\\.com$"));
+    static const QRegularExpression hostnamePattern(QStringLiteral("\\A[a-z]{2}[0-9]{1,6}\\.nordvpn\\.com\\z"));
     if (!hostnamePattern.match(server.hostname).hasMatch()) return {{}, QStringLiteral("OpenVPN server hostname is invalid")};
     if (managementPort == 0) return {{}, QStringLiteral("OpenVPN management port is invalid")};
     if (managementPasswordPath.isEmpty()) return {{}, QStringLiteral("OpenVPN management password path is missing")};
+    for (const auto character : managementPasswordPath) {
+        if (character.unicode() < 32 || character.unicode() == 127) {
+            return {{}, QStringLiteral("OpenVPN management password path contains a control character")};
+        }
+    }
+    QStringList dnsAddresses;
+    for (const auto &candidate : settings.customDns) {
+        const auto address = normalizedDnsAddress(candidate);
+        if (!address.has_value()) return {{}, QStringLiteral("custom DNS address is invalid")};
+        dnsAddresses.append(*address);
+    }
 
     static const QSet<QString> overridden{
         QStringLiteral("remote"), QStringLiteral("proto"), QStringLiteral("auth-user-pass"),
@@ -52,20 +63,27 @@ ConfigResult buildOpenVpnConfig(const QByteArray &signedProfile, const Server &s
         QStringLiteral("ca"), QStringLiteral("capath"), QStringLiteral("cert"), QStringLiteral("extra-certs"),
         QStringLiteral("key"), QStringLiteral("pkcs12"), QStringLiteral("cryptoapicert"),
         QStringLiteral("tls-auth"), QStringLiteral("tls-crypt"), QStringLiteral("tls-crypt-v2"),
-        QStringLiteral("http-proxy-user-pass"), QStringLiteral("socks-proxy"),
+        QStringLiteral("http-proxy"), QStringLiteral("http-proxy-user-pass"), QStringLiteral("socks-proxy"),
+        QStringLiteral("tls-export-cert"), QStringLiteral("crl-verify"),
         QStringLiteral("pull-filter"), QStringLiteral("route-nopull"), QStringLiteral("route-noexec"),
     };
 
     QStringList output;
     QString inlineBlock;
+    QString skippedBlock;
     static const QSet<QString> allowedInlineBlocks{
         QStringLiteral("ca"), QStringLiteral("cert"), QStringLiteral("key"),
         QStringLiteral("tls-auth"), QStringLiteral("tls-crypt"), QStringLiteral("tls-crypt-v2"),
     };
     static const QRegularExpression openingTag(QStringLiteral("^<([a-z0-9-]+)>$"));
+    static const QRegularExpression directivePattern(QStringLiteral("\\A[a-z][a-z0-9-]*\\z"));
     const auto lines = QString::fromUtf8(signedProfile).replace(QStringLiteral("\r\n"), QStringLiteral("\n")).split(u'\n');
     for (const auto &line : lines) {
         const auto trimmed = line.trimmed();
+        if (!skippedBlock.isEmpty()) {
+            if (trimmed == QStringLiteral("</%1>").arg(skippedBlock)) skippedBlock.clear();
+            continue;
+        }
         if (!inlineBlock.isEmpty()) {
             output.append(line);
             if (trimmed.compare(QStringLiteral("</%1>").arg(inlineBlock), Qt::CaseInsensitive) == 0) inlineBlock.clear();
@@ -77,11 +95,21 @@ ConfigResult buildOpenVpnConfig(const QByteArray &signedProfile, const Server &s
             output.append(line);
             continue;
         }
-        if (trimmed.startsWith(u'<')) continue;
-        const auto directive = trimmed.section(QRegularExpression(QStringLiteral("\\s+")), 0, 0).toLower();
+        if (tagMatch.hasMatch()) {
+            skippedBlock = tagMatch.captured(1);
+            continue;
+        }
+        if (trimmed.isEmpty() || trimmed.startsWith(u'#') || trimmed.startsWith(u';')) continue;
+        auto directive = trimmed.section(QRegularExpression(QStringLiteral("\\s+")), 0, 0).toLower();
+        if (directive.startsWith(QStringLiteral("--"))) directive.remove(0, 2);
+        // Reject quoted/escaped option names instead of interpreting them differently
+        // from OpenVPN's parser and accidentally retaining a privileged directive.
+        if (!directivePattern.match(directive).hasMatch()) {
+            return {{}, QStringLiteral("OpenVPN profile contains unsupported directive syntax")};
+        }
         if (!overridden.contains(directive)) output.append(line);
     }
-    if (!inlineBlock.isEmpty()) return {{}, QStringLiteral("OpenVPN profile contains an unterminated inline block")};
+    if (!inlineBlock.isEmpty() || !skippedBlock.isEmpty()) return {{}, QStringLiteral("OpenVPN profile contains an unterminated inline block")};
 
     auto passwordPath = QDir::fromNativeSeparators(managementPasswordPath);
     passwordPath.replace(u'"', QStringLiteral("\\\""));
@@ -90,7 +118,7 @@ ConfigResult buildOpenVpnConfig(const QByteArray &signedProfile, const Server &s
     const auto port = settings.openVpnProtocol == OpenVpnProtocol::Tcp ? 443 : 1194;
     output.append({
         QStringLiteral("proto %1").arg(transport),
-        QStringLiteral("remote %1 %2 %3").arg(server.station).arg(port).arg(remoteTransport),
+        QStringLiteral("remote %1 %2 %3").arg(endpoint.toString()).arg(port).arg(remoteTransport),
         QStringLiteral("auth-user-pass"),
         QStringLiteral("auth-retry nointeract"),
         QStringLiteral("auth-nocache"),
@@ -106,7 +134,7 @@ ConfigResult buildOpenVpnConfig(const QByteArray &signedProfile, const Server &s
         QStringLiteral("disable-dco"),
         QStringLiteral("verb 3"),
     });
-    for (const auto &dns : settings.customDns) {
+    for (const auto &dns : dnsAddresses) {
         output.append(QStringLiteral("dhcp-option DNS %1").arg(dns));
     }
     return {output.join(u'\n') + u'\n', {}};
