@@ -1,5 +1,8 @@
 #include "gui/MainWindow.h"
+#include "gui/GraphiteMap.h"
+#include <QComboBox>
 #include <QDir>
+#include <QFontDatabase>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -17,9 +20,60 @@ class MainWindowTests final : public QObject
         return {{QStringLiteral("authenticated"), true}, {QStringLiteral("wireGuardReady"), true},
             {QStringLiteral("openVpnReady"), true}, {QStringLiteral("status"), status},
             {QStringLiteral("server"), QJsonObject{{QStringLiteral("hostname"), QStringLiteral("se123.nordvpn.com")},
-                {QStringLiteral("city"), QStringLiteral("Stockholm")}, {QStringLiteral("country"), QStringLiteral("Sweden")}}}};
+                {QStringLiteral("city"), QStringLiteral("Stockholm")}, {QStringLiteral("country"), QStringLiteral("Sweden")},
+                {QStringLiteral("countryCode"), QStringLiteral("SE")}}}};
+    }
+    static QJsonArray locations()
+    {
+        QJsonArray result;
+        const QStringList countries{QStringLiteral("Sweden"), QStringLiteral("Norway"), QStringLiteral("Germany"), QStringLiteral("Netherlands")};
+        const QStringList cities{QStringLiteral("Stockholm"), QStringLiteral("Oslo"), QStringLiteral("Frankfurt"), QStringLiteral("Amsterdam")};
+        const QStringList codes{QStringLiteral("SE"), QStringLiteral("NO"), QStringLiteral("DE"), QStringLiteral("NL")};
+        for (int i = 0; i < countries.size(); ++i) result.append(QJsonObject{
+            {QStringLiteral("country"), countries[i]}, {QStringLiteral("city"), cities[i]},
+            {QStringLiteral("countryCode"), codes[i]}, {QStringLiteral("countryId"), i + 1},
+            {QStringLiteral("cityId"), i + 10}, {QStringLiteral("serverCount"), 12}});
+        return result;
     }
 private slots:
+    void chosenLocationSurvivesFilteringAndStatusPolls()
+    {
+        MainWindow window(nullptr, MainWindow::ServiceMode::Preview);
+        window.applyStatus(state(QStringLiteral("disconnected")));
+        window.locations_ = locations();
+        window.updateLocationTable();
+        QCOMPARE(window.locationTiles_.size(), 4);
+        window.locationTiles_.first()->click();
+        QCOMPARE(window.selectedLocation_.value(QStringLiteral("countryCode")).toString(), QStringLiteral("SE"));
+        QCOMPARE(window.homeLocation_->currentIndex(), 1);
+        window.homeSearch_->setText(QStringLiteral("Norway"));
+        QCOMPARE(window.locationTiles_.size(), 1);
+        window.applyStatus(state(QStringLiteral("disconnected")));
+        QCOMPARE(window.selectedLocation_.value(QStringLiteral("countryCode")).toString(), QStringLiteral("SE"));
+        QCOMPARE(window.homeLocation_->currentData().toJsonObject().value(QStringLiteral("cityId")).toInt(), 10);
+        QVERIFY(window.connectionArt_->accessibleDescription().contains(QStringLiteral("Sweden")));
+        window.setBusy(true, QStringLiteral("Connecting…"));
+        QVERIFY(!window.homeLocation_->isEnabled());
+        QVERIFY(!window.locationTiles_.first()->isEnabled());
+        window.setBusy(false);
+        window.applyStatus(state(QStringLiteral("connected")));
+        QVERIFY(!window.homeLocation_->isEnabled());
+        QCOMPARE(window.powerButton_->text(), QStringLiteral("Disconnect"));
+    }
+    void protocolChangeInvalidatesOldLocationChoices()
+    {
+        MainWindow window(nullptr, MainWindow::ServiceMode::Preview);
+        window.applyStatus(state(QStringLiteral("disconnected")));
+        window.locations_ = locations();
+        window.updateLocationTable();
+        window.homeLocation_->setCurrentIndex(1);
+        auto changed = state(QStringLiteral("disconnected"));
+        changed.insert(QStringLiteral("technology"), QStringLiteral("openvpn"));
+        window.applyStatus(changed);
+        QVERIFY(window.selectedLocation_.isEmpty());
+        QVERIFY(window.locations_.isEmpty());
+        QCOMPARE(window.homeLocation_->currentIndex(), 0);
+    }
     void pollingDoesNotUnlockPendingConnection()
     {
         MainWindow window(nullptr, MainWindow::ServiceMode::Preview);
@@ -77,13 +131,28 @@ private slots:
         const auto directory = qEnvironmentVariable("OPENNORD_PREVIEW_DIR");
         if (directory.isEmpty()) return;
         QVERIFY(QDir().mkpath(directory));
+#ifdef Q_OS_WIN
+        // Qt's offscreen platform has no native Windows font discovery.
+        const auto fonts = QDir(qEnvironmentVariable("WINDIR")).filePath(QStringLiteral("Fonts"));
+        for (const auto &file : {QStringLiteral("segoeui.ttf"), QStringLiteral("segoeuib.ttf"), QStringLiteral("seguisb.ttf")})
+            QFontDatabase::addApplicationFont(QDir(fonts).filePath(file));
+#endif
         MainWindow window(nullptr, MainWindow::ServiceMode::Preview);
         window.show();
         QCoreApplication::processEvents();
         QVERIFY(window.grab().save(QDir(directory).filePath(QStringLiteral("login.png"))));
         window.applyStatus(state(QStringLiteral("disconnected")));
+        window.locations_ = locations();
+        window.updateLocationTable();
+        window.homeLocation_->setCurrentIndex(1);
         QCoreApplication::processEvents();
         QVERIFY(window.grab().save(QDir(directory).filePath(QStringLiteral("home.png"))));
+        window.resize(960, 640);
+        QTest::qWait(30);
+        QVERIFY(window.powerButton_->mapTo(&window, QPoint()).y() + window.powerButton_->height()
+            <= window.homeSearch_->mapTo(&window, QPoint()).y());
+        QVERIFY(window.grab().save(QDir(directory).filePath(QStringLiteral("home-small.png"))));
+        window.resize(1280, 820);
         window.applyStatus(state(QStringLiteral("connected")));
         QCoreApplication::processEvents();
         QVERIFY(window.grab().save(QDir(directory).filePath(QStringLiteral("connected-demo.png"))));

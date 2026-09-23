@@ -78,6 +78,8 @@ if(WIN32)
     target_include_directories(OpenNordService PRIVATE resources)
 
     qt_add_executable(OpenNord WIN32
+        src/gui/GraphiteMap.cpp
+        src/gui/GraphiteMap.h
         src/gui/MainWindow.cpp
         src/gui/MainWindow.h
         src/gui/RpcClient.cpp
@@ -149,6 +151,7 @@ if(OPENNORD_BUILD_TESTS)
         target_compile_definitions(opennord_security_tests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
         add_test(NAME opennord_security_tests COMMAND opennord_security_tests)
         qt_add_executable(opennord_gui_tests tests/GuiTests.cpp
+            src/gui/GraphiteMap.cpp src/gui/GraphiteMap.h
             src/gui/MainWindow.cpp src/gui/MainWindow.h src/gui/RpcClient.cpp src/gui/RpcClient.h)
         target_link_libraries(opennord_gui_tests PRIVATE opennord_common opennord_windows
             Qt6::Concurrent Qt6::Widgets Qt6::Test shell32)
