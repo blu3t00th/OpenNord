@@ -1,5 +1,6 @@
 #include "gui/MainWindow.h"
 #include "gui/GraphiteMap.h"
+#include "gui/FlagIcons.h"
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -109,41 +110,6 @@ QIcon brandIcon()
     shade.setColorAt(1, QColor(QStringLiteral("#89bb3f")));
     painter.setBrush(shade);
     painter.drawPath(ribbon);
-    return QIcon(pixmap);
-}
-
-QIcon flagIcon(const QString &countryCode)
-{
-    QPixmap pixmap(40, 40);
-    pixmap.fill(Qt::transparent);
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing);
-    QPainterPath circle;
-    circle.addEllipse(QRectF(1, 1, 38, 38));
-    painter.setClipPath(circle);
-    const auto code = countryCode.toUpper();
-    const auto fill = [&painter](const QColor &color) { painter.fillRect(0, 0, 40, 40, color); };
-    if (code == QStringLiteral("SE") || code == QStringLiteral("NO") || code == QStringLiteral("FI") || code == QStringLiteral("DK")) {
-        fill(QColor(code == QStringLiteral("SE") ? QStringLiteral("#1974b4")
-            : code == QStringLiteral("FI") ? QStringLiteral("#ffffff") : QStringLiteral("#d5404c")));
-        const QColor cross(code == QStringLiteral("SE") ? QStringLiteral("#ffd653")
-            : code == QStringLiteral("FI") ? QStringLiteral("#22549a") : QStringLiteral("#ffffff"));
-        painter.fillRect(12, 0, 7, 40, cross); painter.fillRect(0, 17, 40, 7, cross);
-        if (code == QStringLiteral("NO")) {
-            painter.fillRect(14, 0, 3, 40, QColor(QStringLiteral("#243c73")));
-            painter.fillRect(0, 19, 40, 3, QColor(QStringLiteral("#243c73")));
-        }
-    } else if (code == QStringLiteral("DE") || code == QStringLiteral("NL")) {
-        painter.fillRect(0, 0, 40, 14, QColor(code == QStringLiteral("DE") ? QStringLiteral("#28292c") : QStringLiteral("#d94b53")));
-        painter.fillRect(0, 14, 40, 13, QColor(code == QStringLiteral("DE") ? QStringLiteral("#dc4147") : QStringLiteral("#f5f5f5")));
-        painter.fillRect(0, 27, 40, 13, QColor(code == QStringLiteral("DE") ? QStringLiteral("#ffcc54") : QStringLiteral("#355c9b")));
-    } else {
-        fill(QColor(QStringLiteral("#343d39")));
-        painter.setPen(QColor(QStringLiteral("#d8e8ce")));
-        QFont font(QStringLiteral("Segoe UI")); font.setPixelSize(13); font.setBold(true);
-        painter.setFont(font);
-        painter.drawText(pixmap.rect(), Qt::AlignCenter, code.isEmpty() ? QStringLiteral("◎") : code.left(2));
-    }
     return QIcon(pixmap);
 }
 
@@ -627,6 +593,7 @@ QWidget *MainWindow::createLocationsPage()
     serverTable_ = new QTableWidget;
     serverTable_->setAccessibleName(QStringLiteral("Available VPN locations"));
     serverTable_->setColumnCount(3);
+    serverTable_->setIconSize(QSize(28, 28));
     serverTable_->setHorizontalHeaderLabels({QStringLiteral("Country"), QStringLiteral("City"), QStringLiteral("Available servers")});
     serverTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     serverTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
@@ -939,8 +906,8 @@ void MainWindow::updateLocationTable()
         if (!needle.isEmpty() && !haystack.contains(needle, Qt::CaseInsensitive)) continue;
         const auto row = serverTable_->rowCount();
         serverTable_->insertRow(row);
-        auto *country = new QTableWidgetItem(QStringLiteral("%1  %2").arg(
-            location.value(QStringLiteral("countryCode")).toString(), location.value(QStringLiteral("country")).toString()));
+        auto *country = new QTableWidgetItem(countryFlagIcon(location.value(QStringLiteral("countryCode")).toString()),
+            location.value(QStringLiteral("country")).toString());
         country->setData(Qt::UserRole, location.value(QStringLiteral("countryId")).toInteger());
         country->setData(Qt::UserRole + 1, location.value(QStringLiteral("cityId")).toInteger());
         country->setData(Qt::UserRole + 2, location);
@@ -968,7 +935,7 @@ void MainWindow::updateHomeLocations()
         const auto location = value.toObject();
         const auto text = QStringLiteral("%1 · %2").arg(location.value(QStringLiteral("country")).toString(),
             location.value(QStringLiteral("city")).toString());
-        homeLocation_->addItem(flagIcon(location.value(QStringLiteral("countryCode")).toString()), text, QVariant::fromValue(location));
+        homeLocation_->addItem(countryFlagIcon(location.value(QStringLiteral("countryCode")).toString()), text, QVariant::fromValue(location));
         if (!selectedLocation_.isEmpty()
             && location.value(QStringLiteral("countryId")) == selectedLocation_.value(QStringLiteral("countryId"))
             && location.value(QStringLiteral("cityId")) == selectedLocation_.value(QStringLiteral("cityId"))) selectedIndex = homeLocation_->count() - 1;
@@ -1008,7 +975,7 @@ void MainWindow::updateHomeLocations()
         row->setContentsMargins(10, 8, 10, 8);
         row->setSpacing(10);
         auto *flag = new QLabel;
-        flag->setPixmap(flagIcon(location.value(QStringLiteral("countryCode")).toString()).pixmap(28, 28));
+        flag->setPixmap(countryFlagIcon(location.value(QStringLiteral("countryCode")).toString()).pixmap(28, 28));
         flag->setFixedSize(28, 28);
         flag->setAttribute(Qt::WA_TransparentForMouseEvents);
         row->addWidget(flag);

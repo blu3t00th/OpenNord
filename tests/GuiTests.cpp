@@ -1,11 +1,13 @@
 #include "gui/MainWindow.h"
 #include "gui/GraphiteMap.h"
+#include "gui/FlagIcons.h"
 #include <QComboBox>
 #include <QDir>
 #include <QFontDatabase>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QPainter>
 #include <QStackedWidget>
 #include <QTableWidget>
 #include <QTimer>
@@ -36,6 +38,53 @@ class MainWindowTests final : public QObject
         return result;
     }
 private slots:
+    void completeCountryFlagCoverage()
+    {
+        // Full Nord countries response recorded 2026-09-23, not just visible rows.
+        const auto catalog = QStringLiteral(
+            "AD AE AF AG AL AM AO AR AT AU AZ BA BB BD BE BF BG BH BJ BM "
+            "BN BO BR BS BT BW BZ CA CH CL CO CR CV CY CZ DE DK DO DZ EC "
+            "EE EG ES ET FI FJ FR GB GE GH GL GM GR GT GU GY HK HN HR HU "
+            "ID IE IL IM IN IQ IS IT JE JM JO JP KE KG KH KM KR KW KY KZ "
+            "LA LB LC LI LK LR LT LU LV LY MA MC MD ME MG MK MM MN MR MT "
+            "MU MV MW MX MY MZ NG NL NO NP NZ PA PE PG PH PK PL PR PT PY "
+            "QA RO RS SC SE SG SI SK SL SN SO SR SV TD TH TJ TN TR TT TW "
+            "TZ UA US UY UZ VE VN YE ZA ZM").split(u' ');
+        QCOMPARE(catalog.size(), 150);
+        for (const auto &code : catalog) QVERIFY2(hasCountryFlag(code), qPrintable(code));
+        const auto files = QDir(QStringLiteral(":/flags")).entryList({QStringLiteral("*.png")}, QDir::Files);
+        QCOMPARE(files.size(), 256);
+        const auto fallback = countryFlagIcon(QStringLiteral("ZZ")).pixmap(32, 32).toImage();
+        for (const auto &file : files) {
+            const auto code = file.left(2);
+            const QPixmap asset(QStringLiteral(":/flags/") + file);
+            QVERIFY2(!asset.isNull(), qPrintable(file));
+            QCOMPARE(asset.size(), QSize(128, 128));
+            QVERIFY2(countryFlagIcon(code).pixmap(32, 32).toImage() != fallback, qPrintable(code));
+        }
+        QCOMPARE(countryFlagIcon(QStringLiteral(" uk ")).cacheKey(), countryFlagIcon(QStringLiteral("GB")).cacheKey());
+        QCOMPARE(countryFlagIcon(QStringLiteral("EL")).cacheKey(), countryFlagIcon(QStringLiteral("GR")).cacheKey());
+        QVERIFY(!hasCountryFlag(QStringLiteral("../SE")));
+        QVERIFY(!hasCountryFlag(QString{}));
+    }
+    void flagsAppearInDropdownAndFilteredTable()
+    {
+        MainWindow window(nullptr, MainWindow::ServiceMode::Preview);
+        window.applyStatus(state(QStringLiteral("disconnected")));
+        window.locations_ = {QJsonObject{{QStringLiteral("country"), QStringLiteral("Gambia")},
+            {QStringLiteral("countryCode"), QStringLiteral("GM")}, {QStringLiteral("city"), QStringLiteral("Banjul")},
+            {QStringLiteral("countryId"), 1}, {QStringLiteral("cityId"), 2}, {QStringLiteral("serverCount"), 1}},
+            QJsonObject{{QStringLiteral("country"), QStringLiteral("Guam")},
+            {QStringLiteral("countryCode"), QStringLiteral("GU")}, {QStringLiteral("city"), QStringLiteral("Hagatna")},
+            {QStringLiteral("countryId"), 3}, {QStringLiteral("cityId"), 4}, {QStringLiteral("serverCount"), 1}}};
+        window.updateLocationTable();
+        QCOMPARE(window.homeLocation_->itemIcon(1).cacheKey(), countryFlagIcon(QStringLiteral("GM")).cacheKey());
+        QCOMPARE(window.serverTable_->item(0, 0)->icon().cacheKey(), countryFlagIcon(QStringLiteral("GM")).cacheKey());
+        window.serverSearch_->setText(QStringLiteral("Guam"));
+        QCOMPARE(window.serverTable_->rowCount(), 1);
+        QCOMPARE(window.serverTable_->item(0, 0)->icon().cacheKey(), countryFlagIcon(QStringLiteral("GU")).cacheKey());
+        QCOMPARE(window.homeLocation_->count(), 3);
+    }
     void chosenLocationSurvivesFilteringAndStatusPolls()
     {
         MainWindow window(nullptr, MainWindow::ServiceMode::Preview);
@@ -137,6 +186,20 @@ private slots:
         for (const auto &file : {QStringLiteral("segoeui.ttf"), QStringLiteral("segoeuib.ttf"), QStringLiteral("seguisb.ttf")})
             QFontDatabase::addApplicationFont(QDir(fonts).filePath(file));
 #endif
+        const auto flags = QDir(QStringLiteral(":/flags")).entryList({QStringLiteral("*.png")}, QDir::Files);
+        QImage sheet(960, ((flags.size() + 15) / 16) * 64, QImage::Format_ARGB32_Premultiplied);
+        sheet.fill(QColor(QStringLiteral("#15191a")));
+        QPainter painter(&sheet);
+        painter.setPen(QColor(QStringLiteral("#e6eddf")));
+        QFont font(QStringLiteral("Segoe UI")); font.setPixelSize(10); painter.setFont(font);
+        for (int i = 0; i < flags.size(); ++i) {
+            const auto code = flags[i].left(2);
+            const int x = (i % 16) * 60, y = (i / 16) * 64;
+            countryFlagIcon(code).paint(&painter, QRect(x + 14, y + 4, 32, 32));
+            painter.drawText(QRect(x, y + 39, 60, 18), Qt::AlignCenter, code.toUpper());
+        }
+        painter.end();
+        QVERIFY(sheet.save(QDir(directory).filePath(QStringLiteral("all-country-flags.png"))));
         MainWindow window(nullptr, MainWindow::ServiceMode::Preview);
         window.show();
         QCoreApplication::processEvents();

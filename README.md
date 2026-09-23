@@ -130,3 +130,5 @@ credential code.
 
 GPL-3.0-only. Qt is dynamically linked under its applicable open-source terms;
 WireGuard for Windows and OpenVPN Community are separately installed upstream prerequisites.
+Country flags use the MIT-licensed flag-icons artwork. Its attribution is bundled
+in the application's `licenses/flag-icons.txt` file.
