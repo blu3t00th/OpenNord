@@ -1,7 +1,9 @@
-<img width="1180" height="824" alt="{1402C81E-2606-4886-8B76-04C36E070758}" src="https://github.com/user-attachments/assets/65b1b311-8c70-4c63-98dc-d4bce1166169" />
+<img width="1274" height="845" alt="{2C66F2AB-1E13-49F1-9D9B-DAA6043B418E}" src="https://github.com/user-attachments/assets/09440cfc-9677-403f-bbf6-236ebb1c7ca8" />
 
 
-<img width="1186" height="831" alt="{9429CC6D-3058-4C95-B4C1-6462FE1E7F85}" src="https://github.com/user-attachments/assets/a5666a9a-bed2-4521-a48a-7dc85525dfb0" />
+
+<img width="1276" height="847" alt="{6073C0A8-7986-4034-8C7F-168A3ABFB621}" src="https://github.com/user-attachments/assets/15eb5d6d-9aa3-471c-ab99-455043571d3c" />
+
 
 
 OpenNord is under active development. Review the security notes and test a
