@@ -12,6 +12,9 @@ class QCloseEvent;
 class QComboBox;
 class QLabel;
 class QLineEdit;
+class QHBoxLayout;
+class QVBoxLayout;
+class QResizeEvent;
 class QListWidget;
 class QPushButton;
 class QStackedWidget;
@@ -20,6 +23,8 @@ class QTimer;
 class QSystemTrayIcon;
 
 namespace opennord {
+
+class GraphiteMap;
 
 class MainWindow final : public QMainWindow
 {
@@ -30,6 +35,7 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     friend class MainWindowTests;
@@ -39,7 +45,7 @@ private:
     QWidget *createSettingsPage();
     QWidget *createAccountPage();
     QWidget *createDependencyPage();
-    QWidget *createSidebar();
+    QWidget *createHeader();
     void applyTheme();
     void callService(QString method, QJsonObject params, RpcClient::Callback callback);
     void refreshStatus();
@@ -52,6 +58,9 @@ private:
     void updateConnectionControls();
     void showServiceUnavailable(const QString &error);
     void updateLocationTable();
+    void updateHomeLocations();
+    void updateHomeDestination();
+    void updateResponsiveLayout();
     void updateAutoStart(bool enabled);
     void updateTechnologyControls();
     void updateDependencyPage();
@@ -78,6 +87,8 @@ private:
     QString selectedTechnology_{QStringLiteral("nordlynx")};
     QString selectedOpenVpnProtocol_{QStringLiteral("udp")};
     QJsonArray locations_;
+    QJsonObject selectedLocation_;
+    QJsonObject activeServer_;
     QSystemTrayIcon *trayIcon_{};
 
     QLineEdit *tokenInput_{};
@@ -91,7 +102,13 @@ private:
     QLabel *homeRoute_{};
     QLabel *homeProtocol_{};
     QLabel *homeLocationHint_{};
-    QWidget *connectionArt_{};
+    GraphiteMap *connectionArt_{};
+    QLabel *homeService_{};
+    QComboBox *homeLocation_{};
+    QLineEdit *homeSearch_{};
+    QHBoxLayout *quickLocations_{};
+    QVBoxLayout *homeForm_{};
+    QVector<QPushButton *> locationTiles_;
     QLabel *homeError_{};
     QPushButton *powerButton_{};
     QPushButton *locationConnectButton_{};
