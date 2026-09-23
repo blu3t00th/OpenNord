@@ -91,6 +91,13 @@ if(WIN32)
     target_include_directories(OpenNord PRIVATE resources)
     target_compile_definitions(OpenNord PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 
+    if(MSVC)
+        # Both .rc files embed the requested-execution-level manifest already.
+        # Disable MSVC's generated manifest to avoid duplicate RT_MANIFEST resources.
+        target_link_options(OpenNord PRIVATE /MANIFEST:NO)
+        target_link_options(OpenNordService PRIVATE /MANIFEST:NO)
+    endif()
+
     install(TARGETS OpenNord OpenNordService RUNTIME DESTINATION .)
 
     if(MINGW AND CMAKE_CROSSCOMPILING)
