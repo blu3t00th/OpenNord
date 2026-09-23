@@ -201,17 +201,25 @@ QString WindowsService::uninstall()
     if (!manager) return QStringLiteral("cannot open Service Control Manager: %1").arg(windows::lastErrorMessage());
     windows::UniqueServiceHandle service(OpenServiceW(manager.get(), Name, SERVICE_STOP | DELETE | SERVICE_QUERY_STATUS));
     if (!service) return GetLastError() == ERROR_SERVICE_DOES_NOT_EXIST ? QString() : windows::lastErrorMessage();
-    SERVICE_STATUS status{};
-    ControlService(service.get(), SERVICE_CONTROL_STOP, &status);
-    for (int attempt = 0; attempt < 50; ++attempt) {
-        SERVICE_STATUS_PROCESS processStatus{};
-        DWORD required{};
-        if (!QueryServiceStatusEx(service.get(), SC_STATUS_PROCESS_INFO,
-                reinterpret_cast<BYTE *>(&processStatus), sizeof(processStatus), &required)
-            || processStatus.dwCurrentState == SERVICE_STOPPED) {
-            break;
+    SERVICE_STATUS_PROCESS status{};
+    DWORD required{};
+    if (!QueryServiceStatusEx(service.get(), SC_STATUS_PROCESS_INFO,
+            reinterpret_cast<BYTE *>(&status), sizeof(status), &required)) {
+        return QStringLiteral("cannot query service before removal: %1").arg(windows::lastErrorMessage());
+    }
+    if (status.dwCurrentState != SERVICE_STOPPED) {
+        if (status.dwCurrentState != SERVICE_STOP_PENDING) {
+            SERVICE_STATUS controlStatus{};
+            if (!ControlService(service.get(), SERVICE_CONTROL_STOP, &controlStatus)
+                && GetLastError() != ERROR_SERVICE_NOT_ACTIVE) {
+                return QStringLiteral("cannot stop service before removal: %1").arg(windows::lastErrorMessage());
+            }
         }
-        Sleep(200);
+        QString stopError;
+        if (!waitForState(service.get(), SERVICE_STOPPED, 60000, stopError)) {
+            log(QStringLiteral("service removal aborted: %1").arg(stopError));
+            return QStringLiteral("service removal aborted: %1").arg(stopError);
+        }
     }
     if (!DeleteService(service.get()) && GetLastError() != ERROR_SERVICE_MARKED_FOR_DELETE) {
         const auto error = QStringLiteral("cannot remove service: %1").arg(windows::lastErrorMessage());

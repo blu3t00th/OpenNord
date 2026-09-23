@@ -22,7 +22,7 @@ public:
     void stop();
 
 private:
-    void acceptLoop(std::stop_token stopToken);
+    void acceptLoop(std::stop_token stopToken, void *initialPipe);
     void serveClient(void *rawPipe);
 
     VpnController &controller_;

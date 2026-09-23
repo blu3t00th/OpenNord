@@ -169,7 +169,7 @@ bool writeAll(HANDLE pipe, const QByteArray &data)
     DWORD offset{};
     while (offset < static_cast<DWORD>(data.size())) {
         DWORD written{};
-        if (!WriteFile(pipe, data.constData() + offset, static_cast<DWORD>(data.size()) - offset, &written, nullptr)) return false;
+        if (!WriteFile(pipe, data.constData() + offset, static_cast<DWORD>(data.size()) - offset, &written, nullptr) || written == 0) return false;
         offset += written;
     }
     return true;
@@ -191,6 +191,22 @@ QJsonObject localFailure(QString code, QString message)
     return {{QStringLiteral("ok"), false}, {QStringLiteral("error"), QJsonObject{{QStringLiteral("code"), std::move(code)}, {QStringLiteral("message"), std::move(message)}}}};
 }
 
+bool isRegisteredServicePipe(HANDLE pipe)
+{
+    ULONG serverProcessId{};
+    if (!GetNamedPipeServerProcessId(pipe, &serverProcessId) || serverProcessId == 0) return false;
+    windows::UniqueServiceHandle manager(OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT));
+    if (!manager) return false;
+    windows::UniqueServiceHandle service(OpenServiceW(manager.get(), protocol::ServiceName, SERVICE_QUERY_STATUS));
+    if (!service) return false;
+    SERVICE_STATUS_PROCESS status{};
+    DWORD required{};
+    return QueryServiceStatusEx(service.get(), SC_STATUS_PROCESS_INFO,
+               reinterpret_cast<BYTE *>(&status), sizeof(status), &required)
+        && status.dwCurrentState == SERVICE_RUNNING
+        && status.dwProcessId == serverProcessId;
+}
+
 }
 
 RpcClient::RpcClient(QObject *parent) : QObject(parent) {}
@@ -208,17 +224,18 @@ void RpcClient::call(QString method, QJsonObject params, Callback callback)
             callback({}, response.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString(QStringLiteral("service request failed")));
         }
     });
-    watcher->setFuture(QtConcurrent::run([this, id, method = std::move(method), params = std::move(params)] {
-        return callBlocking(id, method, params);
+    const auto autoStartService = autoStartService_.load();
+    watcher->setFuture(QtConcurrent::run([id, method = std::move(method), params = std::move(params), autoStartService] {
+        return callBlocking(id, method, params, autoStartService);
     }));
 }
 
 QJsonObject RpcClient::callBlocking(qint64 id, const QString &method, const QJsonObject &params,
-                                    bool allowStatusRetry) const
+                                    bool autoStartService, bool allowStatusRetry)
 {
     const auto routineStatus = method == QStringLiteral("status");
     if (!routineStatus) log(QStringLiteral("RPC %1: checking service status").arg(method));
-    const auto availability = ensureServiceRunning(autoStartService_.load());
+    const auto availability = ensureServiceRunning(autoStartService);
     if (!availability.ready()) return localFailure(availability.code, availability.message);
 
     if (!routineStatus) log(QStringLiteral("RPC %1: waiting for named pipe").arg(method));
@@ -226,23 +243,30 @@ QJsonObject RpcClient::callBlocking(qint64 id, const QString &method, const QJso
         if (routineStatus && allowStatusRetry) {
             log(QStringLiteral("status IPC was unavailable during startup; retrying once"));
             Sleep(300);
-            return callBlocking(id, method, params, false);
+            return callBlocking(id, method, params, autoStartService, false);
         }
         const auto message = QStringLiteral("OpenNord service is running, but its IPC named pipe is unavailable: %1")
             .arg(windows::lastErrorMessage());
         log(QStringLiteral("RPC %1: %2").arg(method, message));
         return localFailure(QStringLiteral("ipc_unavailable"), message);
     }
-    windows::UniqueHandle pipe(CreateFileW(protocol::PipeName, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr));
+    constexpr DWORD pipeAccess = (FILE_GENERIC_READ | FILE_GENERIC_WRITE) & ~FILE_CREATE_PIPE_INSTANCE;
+    windows::UniqueHandle pipe(CreateFileW(protocol::PipeName, pipeAccess, 0, nullptr, OPEN_EXISTING,
+        SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr));
     if (!pipe) {
         if (routineStatus && allowStatusRetry) {
             log(QStringLiteral("status IPC connection failed during startup; retrying once"));
             Sleep(300);
-            return callBlocking(id, method, params, false);
+            return callBlocking(id, method, params, autoStartService, false);
         }
         const auto message = QStringLiteral("Cannot open the OpenNord IPC named pipe: %1").arg(windows::lastErrorMessage());
         log(QStringLiteral("RPC %1: %2").arg(method, message));
         return localFailure(QStringLiteral("ipc_connection_failed"), message);
+    }
+    // Authenticate the service before transmitting credentials or other user data.
+    if (!isRegisteredServicePipe(pipe.get())) {
+        log(QStringLiteral("RPC %1: pipe server does not match the registered service process").arg(method));
+        return localFailure(QStringLiteral("ipc_untrusted_server"), QStringLiteral("Cannot verify the identity of the OpenNord service."));
     }
     const auto frame = protocol::encodeFrame({{QStringLiteral("id"), id}, {QStringLiteral("method"), method}, {QStringLiteral("params"), params}});
     if (!writeAll(pipe.get(), frame)) {
@@ -255,7 +279,7 @@ QJsonObject RpcClient::callBlocking(qint64 id, const QString &method, const QJso
         if (routineStatus && allowStatusRetry) {
             log(QStringLiteral("status IPC connection closed during startup; retrying once"));
             Sleep(300);
-            return callBlocking(id, method, params, false);
+            return callBlocking(id, method, params, autoStartService, false);
         }
         log(QStringLiteral("RPC %1: service closed the connection before responding").arg(method));
         return localFailure(QStringLiteral("ipc_connection_closed"), QStringLiteral("OpenNord service closed the IPC connection before responding."));

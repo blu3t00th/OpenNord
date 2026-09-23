@@ -21,6 +21,14 @@ private slots:
     void settingsRoundTripPreservesOpenVpn();
     void openVpnConfigRejectsUnterminatedTrustBlock();
     void openVpnManagementValuesStayOnOneLine();
+    void configsRejectInvalidDns_data();
+    void configsRejectInvalidDns();
+    void configsNormalizeDnsAddresses();
+    void openVpnConfigStripsPrefixedDirectives();
+    void openVpnConfigRejectsQuotedDirectiveNames();
+    void openVpnConfigRejectsInjectedManagementPath();
+    void openVpnConfigDropsUnsupportedInlineBlocks();
+    void wireGuardRejectsNonCanonicalKeys();
 };
 
 void CommonTests::protocolRoundTrip()
@@ -138,6 +146,95 @@ void CommonTests::openVpnManagementValuesStayOnOneLine()
     const auto escaped = openVpnManagementEscape(QStringLiteral("user\npassword\\\""));
     QVERIFY(!escaped.contains(u'\n'));
     QCOMPARE(escaped, QStringLiteral("\"user\\npassword\\\\\\\"\""));
+}
+
+void CommonTests::configsRejectInvalidDns_data()
+{
+    QTest::addColumn<QString>("dns");
+    QTest::newRow("hostname") << QStringLiteral("dns.example.com");
+    QTest::newRow("ipv4-directive") << QStringLiteral("1.1.1.1\nup injected.exe");
+    QTest::newRow("scoped-ipv6") << QStringLiteral("fe80::1%12");
+    QTest::newRow("scope-directive") << QStringLiteral("fe80::1%12\nup injected.exe");
+}
+
+void CommonTests::configsRejectInvalidDns()
+{
+    QFETCH(QString, dns);
+    const auto key = QString::fromLatin1(QByteArray(32, '\0').toBase64());
+    const Credentials credentials{.nordLynxPrivateKey = key};
+    const Server server{.hostname = QStringLiteral("se123.nordvpn.com"), .station = QStringLiteral("192.0.2.2"), .publicKey = key};
+    Settings settings;
+    settings.customDns = {dns};
+    QVERIFY(!buildWireGuardConfig(credentials, server, settings).ok());
+    QVERIFY(!buildOpenVpnConfig("client\n", server, settings, 31194, QStringLiteral("C:/OpenNord/management.key")).ok());
+}
+
+void CommonTests::configsNormalizeDnsAddresses()
+{
+    const auto key = QString::fromLatin1(QByteArray(32, '\0').toBase64());
+    const Credentials credentials{.nordLynxPrivateKey = key};
+    const Server server{.hostname = QStringLiteral("se123.nordvpn.com"), .station = QStringLiteral("192.0.2.2"), .publicKey = key};
+    Settings settings;
+    settings.customDns = {QStringLiteral(" 1.1.1.1 "), QStringLiteral("2001:0db8:0:0:0:0:0:1")};
+    const auto wireGuard = buildWireGuardConfig(credentials, server, settings);
+    QVERIFY(wireGuard.ok());
+    QVERIFY(wireGuard.value.contains(QStringLiteral("DNS = 1.1.1.1, 2001:db8::1\n")));
+    const auto openVpn = buildOpenVpnConfig("client\n", server, settings, 31194, QStringLiteral("C:/OpenNord/management.key"));
+    QVERIFY(openVpn.ok());
+    QVERIFY(openVpn.value.contains(QStringLiteral("dhcp-option DNS 1.1.1.1\n")));
+    QVERIFY(openVpn.value.contains(QStringLiteral("dhcp-option DNS 2001:db8::1\n")));
+}
+
+void CommonTests::openVpnConfigStripsPrefixedDirectives()
+{
+    const QByteArray profile = "client\n--config secret.conf\n--plugin plugin.dll\n--remote other.example 1194\n--log leaked.log\nhttp-proxy proxy.example 8080 secret.txt\n";
+    const Server server{.hostname = QStringLiteral("se123.nordvpn.com"), .station = QStringLiteral("192.0.2.2")};
+    const auto config = buildOpenVpnConfig(profile, server, Settings{}, 31194, QStringLiteral("C:/OpenNord/management.key"));
+    QVERIFY(config.ok());
+    QVERIFY(!config.value.contains(QStringLiteral("secret.conf")));
+    QVERIFY(!config.value.contains(QStringLiteral("plugin.dll")));
+    QVERIFY(!config.value.contains(QStringLiteral("other.example")));
+    QVERIFY(!config.value.contains(QStringLiteral("leaked.log")));
+    QVERIFY(!config.value.contains(QStringLiteral("secret.txt")));
+    QCOMPARE(config.value.count(QStringLiteral("remote 192.0.2.2 1194 udp4\n")), 1);
+}
+
+void CommonTests::openVpnConfigRejectsQuotedDirectiveNames()
+{
+    const Server server{.hostname = QStringLiteral("se123.nordvpn.com"), .station = QStringLiteral("192.0.2.2")};
+    for (const auto &profile : {QByteArray("\"config\" secret.conf\n"), QByteArray("'plugin' plugin.dll\n")}) {
+        QVERIFY(!buildOpenVpnConfig(profile, server, Settings{}, 31194, QStringLiteral("C:/OpenNord/management.key")).ok());
+    }
+}
+
+void CommonTests::openVpnConfigRejectsInjectedManagementPath()
+{
+    const Server server{.hostname = QStringLiteral("se123.nordvpn.com"), .station = QStringLiteral("192.0.2.2")};
+    QVERIFY(!buildOpenVpnConfig("client\n", server, Settings{}, 31194,
+                               QStringLiteral("C:/OpenNord/key\nplugin injected.dll")).ok());
+}
+
+void CommonTests::openVpnConfigDropsUnsupportedInlineBlocks()
+{
+    const QByteArray profile = "client\n<connection>\nremote nested.example 443\nhttp-proxy nested.proxy 80\n</connection>\n<auth-user-pass>\nprivate-user\nprivate-password\n</auth-user-pass>\n<ca>\ncertificate\n</ca>\n";
+    const Server server{.hostname = QStringLiteral("se123.nordvpn.com"), .station = QStringLiteral("192.0.2.2")};
+    const auto config = buildOpenVpnConfig(profile, server, Settings{}, 31194, QStringLiteral("C:/OpenNord/management.key"));
+    QVERIFY(config.ok());
+    QVERIFY(!config.value.contains(QStringLiteral("nested.")));
+    QVERIFY(!config.value.contains(QStringLiteral("private-")));
+    QVERIFY(config.value.contains(QStringLiteral("<ca>\ncertificate\n</ca>")));
+}
+
+void CommonTests::wireGuardRejectsNonCanonicalKeys()
+{
+    const auto key = QString::fromLatin1(QByteArray(32, '\0').toBase64());
+    const Server server{.station = QStringLiteral("192.0.2.2"), .publicKey = key};
+    auto missingPadding = key;
+    missingPadding.chop(1);
+    QVERIFY(!buildWireGuardConfig(Credentials{.nordLynxPrivateKey = missingPadding}, server, Settings{}).ok());
+    auto multiline = key;
+    multiline.insert(20, u'\n');
+    QVERIFY(!buildWireGuardConfig(Credentials{.nordLynxPrivateKey = multiline}, server, Settings{}).ok());
 }
 
 QTEST_MAIN(CommonTests)

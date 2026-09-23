@@ -20,12 +20,15 @@
 #include <QMessageBox>
 #include <QMenu>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 #include <QPushButton>
 #include <QSettings>
+#include <QScrollArea>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QSystemTrayIcon>
+#include <QStyle>
 #include <QTableWidget>
 #include <QTimer>
 #include <QUrl>
@@ -33,6 +36,8 @@
 
 #include <windows.h>
 #include <shellapi.h>
+
+#include <utility>
 
 namespace opennord {
 namespace {
@@ -62,6 +67,89 @@ QLabel *body(const QString &text)
     return label;
 }
 
+QWidget *scrollable(QWidget *content)
+{
+    auto *scroll = new QScrollArea;
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setWidget(content);
+    return scroll;
+}
+
+void setTone(QWidget *widget, const QString &tone)
+{
+    if (widget->property("tone").toString() == tone) return;
+    widget->setProperty("tone", tone);
+    widget->style()->unpolish(widget);
+    widget->style()->polish(widget);
+    widget->update();
+}
+
+class ConnectionArt final : public QWidget
+{
+public:
+    explicit ConnectionArt(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setMinimumSize(160, 180);
+        setMaximumWidth(280);
+        setAccessibleName(QStringLiteral("Connection status illustration"));
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const auto side = qMin(width(), height());
+        painter.translate(width() / 2.0, height() / 2.0);
+        painter.scale(side / 240.0, side / 240.0);
+        const auto connected = property("tone").toString() == QStringLiteral("connected");
+        const QColor accent(connected ? QStringLiteral("#75ead1") : QStringLiteral("#7192a7"));
+        QRadialGradient glow(0, 0, 114);
+        glow.setColorAt(0, QColor(accent.red(), accent.green(), accent.blue(), 24));
+        glow.setColorAt(1, QColor(accent.red(), accent.green(), accent.blue(), 0));
+        painter.setBrush(glow);
+        painter.setPen(Qt::NoPen);
+        painter.drawEllipse(QPointF(0, 0), 114, 114);
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 28), 1));
+        painter.drawEllipse(QPointF(0, 0), 104, 104);
+        painter.drawEllipse(QPointF(0, 0), 82, 82);
+        painter.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 65), 1));
+        for (int angle = 0; angle < 360; angle += 30) {
+            painter.save();
+            painter.rotate(angle);
+            painter.drawLine(QPointF(0, -99), QPointF(0, -104));
+            painter.restore();
+        }
+        QPainterPath shield;
+        shield.moveTo(0, -49);
+        shield.lineTo(43, -32);
+        shield.lineTo(39, 18);
+        shield.quadTo(31, 45, 0, 59);
+        shield.quadTo(-31, 45, -39, 18);
+        shield.lineTo(-43, -32);
+        shield.closeSubpath();
+        painter.setBrush(QColor(QStringLiteral("#132c38")));
+        painter.setPen(QPen(accent, 1.8));
+        painter.drawPath(shield);
+        painter.setPen(QPen(accent, 3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        if (connected) {
+            painter.drawLine(QPointF(-17, 3), QPointF(-4, 16));
+            painter.drawLine(QPointF(-4, 16), QPointF(21, -12));
+        } else {
+            painter.drawLine(QPointF(-22, 17), QPointF(-4, -12));
+            painter.drawLine(QPointF(-4, -12), QPointF(8, 7));
+            painter.drawLine(QPointF(8, 7), QPointF(15, -3));
+            painter.drawLine(QPointF(15, -3), QPointF(26, 17));
+        }
+        painter.setBrush(accent);
+        painter.setPen(Qt::NoPen);
+        painter.drawEllipse(QPointF(73, -73), 4, 4);
+    }
+};
+
 class NetworkArt final : public QWidget
 {
 public:
@@ -71,13 +159,16 @@ protected:
     {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
-        painter.fillRect(rect(), QColor(8, 25, 36));
-        painter.setPen(QPen(QColor(99, 230, 207, 25), 1));
-        constexpr int spacing = 34;
+        QLinearGradient backdrop(0, 0, width(), height());
+        backdrop.setColorAt(0, QColor(QStringLiteral("#142f3c")));
+        backdrop.setColorAt(1, QColor(QStringLiteral("#0b1926")));
+        painter.fillRect(rect(), backdrop);
+        painter.setPen(QPen(QColor(99, 230, 207, 12), 1));
+        constexpr int spacing = 42;
         for (int x = 0; x < width(); x += spacing) painter.drawLine(x, 0, x, height());
         for (int y = 0; y < height(); y += spacing) painter.drawLine(0, y, width(), y);
-        const auto diameter = qMin(width(), height()) * 0.58;
-        const QRectF globe((width() - diameter) / 2.0, height() * 0.12, diameter, diameter);
+        const auto diameter = qMin(width(), height()) * 0.7;
+        const QRectF globe((width() - diameter) / 2.0, height() * 0.20, diameter, diameter);
         painter.setPen(QPen(QColor(99, 230, 207, 95), 1.4));
         painter.drawEllipse(globe);
         painter.drawEllipse(QRectF(globe.center().x() - diameter * .18, globe.top(), diameter * .36, diameter));
@@ -86,19 +177,20 @@ protected:
         painter.setPen(Qt::NoPen);
         painter.drawEllipse(QPointF(globe.center().x() + diameter * .2, globe.center().y() - diameter * .21), 5, 5);
         painter.setPen(QColor(235, 244, 244));
-        QFont font(QStringLiteral("Bahnschrift SemiCondensed"), 27, QFont::DemiBold);
+        QFont font(QStringLiteral("Segoe UI"), 22, QFont::DemiBold);
         painter.setFont(font);
-        painter.drawText(QRectF(42, height() - 115, width() - 84, 100), Qt::AlignLeft | Qt::AlignVCenter,
+        painter.drawText(QRectF(32, height() - 145, width() - 64, 110), Qt::AlignLeft | Qt::AlignVCenter,
                          QStringLiteral("Private routes.\nPublic code."));
     }
 };
 
 }
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), rpc_(this)
+MainWindow::MainWindow(QWidget *parent, ServiceMode serviceMode)
+    : QMainWindow(parent), rpc_(this), serviceMode_(serviceMode)
 {
     setWindowTitle(QStringLiteral("OpenNord"));
-    resize(1180, 760);
+    resize(1180, 800);
     setMinimumSize(960, 640);
     auto *central = new QWidget;
     auto *layout = new QHBoxLayout(central);
@@ -115,7 +207,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), rpc_(this)
     layout->addWidget(pages_, 1);
     setCentralWidget(central);
     applyTheme();
-    setupTrayIcon();
+    if (serviceMode_ == ServiceMode::Live) setupTrayIcon();
 
     connect(navigation_, &QListWidget::currentRowChanged, this, [this](int row) {
         if (row < 0 || !authenticated_) return;
@@ -132,8 +224,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), rpc_(this)
     statusTimer_ = new QTimer(this);
     statusTimer_->setInterval(1000);
     connect(statusTimer_, &QTimer::timeout, this, &MainWindow::refreshStatus);
-    statusTimer_->start();
-    refreshStatus();
+    updateConnectionControls();
+    if (serviceMode_ == ServiceMode::Live) {
+        statusTimer_->start();
+        refreshStatus();
+    }
 }
 
 void MainWindow::setupTrayIcon()
@@ -190,6 +285,7 @@ void MainWindow::setupTrayIcon()
 
 void MainWindow::runElevatedServiceCommand(const QString &command, bool enableAutoStart)
 {
+    if (serviceMode_ == ServiceMode::Preview) return;
     const auto servicePath = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("OpenNordService.exe"));
     if (!QFileInfo::exists(servicePath)) {
         showError(QStringLiteral("OpenNordService.exe is missing. Please reinstall OpenNord as administrator."));
@@ -228,19 +324,24 @@ QWidget *MainWindow::createSidebar()
 {
     auto *sidebar = new QFrame;
     sidebar->setObjectName(QStringLiteral("sidebar"));
-    sidebar->setFixedWidth(205);
+    sidebar->setFixedWidth(200);
     auto *layout = new QVBoxLayout(sidebar);
-    layout->setContentsMargins(18, 25, 18, 20);
-    auto *brand = new QLabel(QStringLiteral("◯  OpenNord"));
+    layout->setContentsMargins(20, 32, 20, 24);
+    auto *brand = new QLabel(QStringLiteral("◈  OpenNord"));
     brand->setObjectName(QStringLiteral("brand"));
     layout->addWidget(brand);
+    auto *edition = eyebrow(QStringLiteral("WINDOWS CLIENT"));
+    edition->setObjectName(QStringLiteral("sidebarCaption"));
+    layout->addWidget(edition);
+    layout->addSpacing(32);
     navigation_ = new QListWidget;
     navigation_->setObjectName(QStringLiteral("navigation"));
+    navigation_->setAccessibleName(QStringLiteral("Main navigation"));
     navigation_->addItems({QStringLiteral("Overview"), QStringLiteral("Locations"), QStringLiteral("Settings"), QStringLiteral("Account")});
     navigation_->setCurrentRow(0);
     navigation_->setVisible(false);
     layout->addWidget(navigation_, 1);
-    auto *privacy = new QLabel(QStringLiteral("◇  OPEN BY DESIGN\n    GPLv3 · No telemetry"));
+    auto *privacy = new QLabel(QStringLiteral("OPEN BY DESIGN\nGPLv3 · No telemetry\n\nCommunity-built. Independent."));
     privacy->setObjectName(QStringLiteral("privacy"));
     layout->addWidget(privacy);
     return sidebar;
@@ -252,16 +353,17 @@ QWidget *MainWindow::createLoginPage()
     auto *layout = new QHBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
     auto *art = new NetworkArt;
-    art->setMinimumWidth(370);
-    layout->addWidget(art, 5);
+    art->setMinimumWidth(250);
+    layout->addWidget(art, 4);
     auto *panel = new QWidget;
     auto *form = new QVBoxLayout(panel);
-    form->setContentsMargins(65, 70, 65, 60);
+    form->setContentsMargins(36, 36, 36, 36);
+    form->setSpacing(12);
     form->addStretch();
     form->addWidget(eyebrow(QStringLiteral("UNOFFICIAL OPEN-SOURCE CLIENT")));
     form->addSpacing(14);
-    form->addWidget(title(QStringLiteral("Connect your\nNord account.")));
-    form->addWidget(body(QStringLiteral("Generate an access token in Nord Account. The service validates it with Nord's signed API and encrypts it locally with Windows DPAPI.")));
+    form->addWidget(title(QStringLiteral("Your privacy.\nYour connection.")));
+    form->addWidget(body(QStringLiteral("Connect your NordVPN subscription with an access token from Nord Account. Your saved credentials are encrypted on this PC.")));
     loginServiceError_ = new QLabel;
     loginServiceError_->setObjectName(QStringLiteral("errorBanner"));
     loginServiceError_->setWordWrap(true);
@@ -273,7 +375,9 @@ QWidget *MainWindow::createLoginPage()
     form->addWidget(label);
     tokenInput_ = new QLineEdit;
     tokenInput_->setEchoMode(QLineEdit::Password);
-    tokenInput_->setPlaceholderText(QStringLiteral("Paste lowercase hexadecimal token"));
+    tokenInput_->setPlaceholderText(QStringLiteral("Paste your access token"));
+    tokenInput_->setAccessibleName(QStringLiteral("Nord access token"));
+    label->setBuddy(tokenInput_);
     tokenInput_->setMinimumHeight(48);
     form->addWidget(tokenInput_);
     loginButton_ = new QPushButton(QStringLiteral("Continue securely"));
@@ -290,16 +394,18 @@ QWidget *MainWindow::createLoginPage()
         QDesktopServices::openUrl(QUrl(QStringLiteral("https://my.nordaccount.com/dashboard/nordvpn/manual-configuration/")));
     });
     connect(loginButton_, &QPushButton::clicked, this, [this] {
+        if (busy_ || !serviceAvailable_) return;
         const auto token = tokenInput_->text().trimmed();
         if (token.isEmpty()) return showError(QStringLiteral("Enter an access token."));
         setBusy(true, QStringLiteral("Verifying…"));
-        rpc_.call(QStringLiteral("login"), {{QStringLiteral("token"), token}}, [this](QJsonValue, QString error) {
+        callService(QStringLiteral("login"), {{QStringLiteral("token"), token}}, [this](QJsonValue, QString error) {
             tokenInput_->clear();
             setBusy(false);
             if (!error.isEmpty()) return showError(error);
             refreshStatus();
         });
     });
+    connect(tokenInput_, &QLineEdit::returnPressed, loginButton_, &QPushButton::click);
     return page;
 }
 
@@ -341,61 +447,111 @@ QWidget *MainWindow::createHomePage()
 {
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(70, 60, 70, 45);
-    homeEyebrow_ = eyebrow(QStringLiteral("NORDLYNX · WIREGUARDNT"));
-    layout->addWidget(homeEyebrow_);
-    layout->addSpacing(18);
+    layout->setContentsMargins(40, 36, 40, 32);
+    layout->setSpacing(20);
+    auto *heading = new QHBoxLayout;
+    heading->addWidget(eyebrow(QStringLiteral("YOUR CONNECTION")));
+    heading->addStretch();
+    homeStatus_ = new QLabel(QStringLiteral("CHECKING STATUS"));
+    homeStatus_->setObjectName(QStringLiteral("statusBadge"));
+    heading->addWidget(homeStatus_);
+    layout->addLayout(heading);
+
+    auto *hero = new QFrame;
+    hero->setObjectName(QStringLiteral("heroCard"));
+    auto *heroLayout = new QHBoxLayout(hero);
+    heroLayout->setContentsMargins(28, 30, 22, 30);
+    heroLayout->setSpacing(12);
+    auto *copy = new QVBoxLayout;
+    copy->setSpacing(14);
+    copy->addStretch();
+    homeEyebrow_ = eyebrow(QStringLiteral("A CLEARER WAY TO CONNECT"));
+    copy->addWidget(homeEyebrow_);
     homeTitle_ = title(QStringLiteral("Ready when you are"));
-    layout->addWidget(homeTitle_);
-    homeDescription_ = body(QStringLiteral("One action selects a recommended low-load server and establishes a native Windows tunnel."));
-    homeDescription_->setMaximumWidth(590);
-    layout->addWidget(homeDescription_);
-    layout->addStretch();
-    auto *actionRow = new QHBoxLayout;
-    powerButton_ = new QPushButton(QStringLiteral("⏻"));
-    powerButton_->setObjectName(QStringLiteral("powerButton"));
-    powerButton_->setFixedSize(76, 76);
-    actionRow->addWidget(powerButton_);
+    copy->addWidget(homeTitle_);
+    homeDescription_ = body(QStringLiteral("Connect to a recommended server, or choose a location that suits you."));
+    copy->addWidget(homeDescription_);
+    copy->addStretch();
+    heroLayout->addLayout(copy, 3);
+    connectionArt_ = new ConnectionArt;
+    heroLayout->addWidget(connectionArt_, 2);
+    layout->addWidget(hero, 1);
+
+    auto *connectionCard = new QFrame;
+    connectionCard->setObjectName(QStringLiteral("surfaceCard"));
+    auto *actionRow = new QHBoxLayout(connectionCard);
+    actionRow->setContentsMargins(24, 20, 24, 20);
+    actionRow->setSpacing(20);
     auto *serverColumn = new QVBoxLayout;
+    serverColumn->addWidget(eyebrow(QStringLiteral("DESTINATION")));
     homeServer_ = new QLabel(QStringLiteral("Best available location"));
     homeServer_->setObjectName(QStringLiteral("connectionServer"));
+    homeServer_->setWordWrap(true);
+    homeServer_->setTextFormat(Qt::PlainText);
     serverColumn->addWidget(homeServer_);
-    serverColumn->addWidget(body(QStringLiteral("Full tunnel · DNS protected")));
-    actionRow->addLayout(serverColumn);
-    actionRow->addStretch();
-    layout->addLayout(actionRow);
+    homeLocationHint_ = body(QStringLiteral("Recommended automatically"));
+    serverColumn->addWidget(homeLocationHint_);
+    actionRow->addLayout(serverColumn, 1);
+    powerButton_ = new QPushButton(QStringLiteral("Quick connect"));
+    powerButton_->setObjectName(QStringLiteral("connectButton"));
+    powerButton_->setMinimumSize(160, 48);
+    actionRow->addWidget(powerButton_);
+    layout->addWidget(connectionCard);
+
+    auto *details = new QHBoxLayout;
+    const auto addDetail = [details](const QString &label, QLabel *&value) {
+        auto *card = new QFrame;
+        card->setObjectName(QStringLiteral("detailCard"));
+        auto *column = new QVBoxLayout(card);
+        column->setContentsMargins(20, 16, 20, 16);
+        column->addWidget(eyebrow(label));
+        value = body(QString{});
+        column->addWidget(value);
+        details->addWidget(card, 1);
+    };
+    addDetail(QStringLiteral("PROTOCOL"), homeProtocol_);
+    addDetail(QStringLiteral("TUNNEL STATUS"), homeRoute_);
+    layout->addLayout(details);
     homeError_ = new QLabel;
     homeError_->setObjectName(QStringLiteral("errorBanner"));
     homeError_->setWordWrap(true);
     homeError_->hide();
     layout->addWidget(homeError_);
-    layout->addStretch();
+    auto *browse = new QPushButton(QStringLiteral("Explore all locations  →"));
+    browse->setObjectName(QStringLiteral("linkButton"));
+    layout->addWidget(browse, 0, Qt::AlignLeft);
+    connect(browse, &QPushButton::clicked, this, [this] { navigation_->setCurrentRow(1); });
     connect(powerButton_, &QPushButton::clicked, this, [this] {
+        if (!powerButton_->isEnabled()) return;
         const auto disconnecting = connectionStatus_ == QStringLiteral("connected") || connectionStatus_ == QStringLiteral("reconnecting");
         setBusy(true, disconnecting ? QStringLiteral("Disconnecting…") : QStringLiteral("Connecting…"));
-        rpc_.call(disconnecting ? QStringLiteral("disconnect") : QStringLiteral("quickConnect"), {}, [this](QJsonValue, QString error) {
+        callService(disconnecting ? QStringLiteral("disconnect") : QStringLiteral("quickConnect"), {}, [this](QJsonValue, QString error) {
             setBusy(false);
             if (!error.isEmpty()) showError(error);
             refreshStatus();
         });
     });
-    return page;
+    return scrollable(page);
 }
 
 QWidget *MainWindow::createLocationsPage()
 {
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(55, 45, 55, 40);
+    layout->setContentsMargins(40, 36, 40, 32);
+    layout->setSpacing(14);
     layout->addWidget(eyebrow(QStringLiteral("GLOBAL NETWORK")));
     layout->addWidget(title(QStringLiteral("Choose a location")));
     serverSearch_ = new QLineEdit;
     serverSearch_->setPlaceholderText(QStringLiteral("Search every country, country code, or city"));
+    serverSearch_->setAccessibleName(QStringLiteral("Search locations"));
+    serverSearch_->setClearButtonEnabled(true);
     serverSearch_->setMinimumHeight(42);
     layout->addWidget(serverSearch_);
     locationCount_ = body(QStringLiteral("Loading locations…"));
     layout->addWidget(locationCount_);
     serverTable_ = new QTableWidget;
+    serverTable_->setAccessibleName(QStringLiteral("Available VPN locations"));
     serverTable_->setColumnCount(3);
     serverTable_->setHorizontalHeaderLabels({QStringLiteral("Country"), QStringLiteral("City"), QStringLiteral("Available servers")});
     serverTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
@@ -405,19 +561,23 @@ QWidget *MainWindow::createLocationsPage()
     serverTable_->setSelectionMode(QAbstractItemView::SingleSelection);
     serverTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     serverTable_->verticalHeader()->hide();
+    serverTable_->verticalHeader()->setDefaultSectionSize(48);
+    serverTable_->setShowGrid(false);
+    serverTable_->setAlternatingRowColors(true);
     layout->addWidget(serverTable_, 1);
-    auto *connectButton = new QPushButton(QStringLiteral("Connect to selected location"));
-    connectButton->setObjectName(QStringLiteral("primary"));
-    layout->addWidget(connectButton, 0, Qt::AlignRight);
+    locationConnectButton_ = new QPushButton(QStringLiteral("Connect to selected location"));
+    locationConnectButton_->setObjectName(QStringLiteral("primary"));
+    layout->addWidget(locationConnectButton_, 0, Qt::AlignRight);
     connect(serverSearch_, &QLineEdit::textChanged, this, &MainWindow::updateLocationTable);
     const auto connectSelected = [this] {
+        if (!locationConnectButton_->isEnabled()) return;
         const auto row = serverTable_->currentRow();
-        if (row < 0) return;
+        if (row < 0 || !serverTable_->item(row, 0)) return;
         const auto countryId = serverTable_->item(row, 0)->data(Qt::UserRole).toLongLong();
         const auto cityId = serverTable_->item(row, 0)->data(Qt::UserRole + 1).toLongLong();
         navigation_->setCurrentRow(0);
         setBusy(true, QStringLiteral("Connecting…"));
-        rpc_.call(QStringLiteral("connectLocation"), {
+        callService(QStringLiteral("connectLocation"), {
             {QStringLiteral("locationCountryId"), countryId},
             {QStringLiteral("locationCityId"), cityId},
         }, [this](QJsonValue, QString error) {
@@ -426,7 +586,8 @@ QWidget *MainWindow::createLocationsPage()
             refreshStatus();
         });
     };
-    connect(connectButton, &QPushButton::clicked, this, connectSelected);
+    connect(locationConnectButton_, &QPushButton::clicked, this, connectSelected);
+    connect(serverTable_, &QTableWidget::itemSelectionChanged, this, &MainWindow::updateConnectionControls);
     connect(serverTable_, &QTableWidget::cellDoubleClicked, this, [connectSelected](int, int) { connectSelected(); });
     return page;
 }
@@ -435,15 +596,17 @@ QWidget *MainWindow::createSettingsPage()
 {
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(65, 50, 65, 45);
+    layout->setContentsMargins(40, 36, 40, 32);
+    layout->setSpacing(14);
     layout->addWidget(eyebrow(QStringLiteral("LOCAL POLICY")));
     layout->addWidget(title(QStringLiteral("Connection settings")));
+    layout->addWidget(body(QStringLiteral("Choose how OpenNord connects. Tunnel changes take effect on your next connection.")));
     autoConnect_ = new QCheckBox(QStringLiteral("Auto-connect when OpenNord starts"));
     launchAtStartup_ = new QCheckBox(QStringLiteral("Launch OpenNord with Windows"));
     killSwitch_ = new QCheckBox(QStringLiteral("Strict kill switch (blocks traffic outside the tunnel)"));
     allowLan_ = new QCheckBox(QStringLiteral("Allow local network access in flexible mode"));
     for (auto *box : {autoConnect_, launchAtStartup_, killSwitch_, allowLan_}) {
-        box->setMinimumHeight(48);
+        box->setMinimumHeight(40);
         layout->addWidget(box);
     }
     connect(killSwitch_, &QCheckBox::toggled, this, [this](bool strict) {
@@ -451,6 +614,8 @@ QWidget *MainWindow::createSettingsPage()
         if (strict) allowLan_->setChecked(false);
     });
     auto *form = new QFormLayout;
+    form->setVerticalSpacing(12);
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     technology_ = new QComboBox;
     technology_->addItem(QStringLiteral("NordLynx (WireGuard)"), QStringLiteral("nordlynx"));
     technology_->addItem(QStringLiteral("OpenVPN"), QStringLiteral("openvpn"));
@@ -460,6 +625,7 @@ QWidget *MainWindow::createSettingsPage()
     preferredCountry_ = new QLineEdit;
     preferredCountry_->setMaxLength(2);
     preferredCountry_->setPlaceholderText(QStringLiteral("SE"));
+    preferredCountry_->setToolTip(QStringLiteral("Two-letter country code for quick connect. Leave empty for the recommended country."));
     dnsServers_ = new QLineEdit;
     dnsServers_->setPlaceholderText(QStringLiteral("103.86.96.100, 103.86.99.100"));
     form->addRow(QStringLiteral("VPN technology"), technology_);
@@ -471,10 +637,10 @@ QWidget *MainWindow::createSettingsPage()
     layout->addWidget(policyNote_);
     connect(technology_, &QComboBox::currentIndexChanged, this, [this] { updateTechnologyControls(); });
     layout->addStretch();
-    auto *save = new QPushButton(QStringLiteral("Save changes"));
-    save->setObjectName(QStringLiteral("primary"));
-    layout->addWidget(save, 0, Qt::AlignRight);
-    connect(save, &QPushButton::clicked, this, [this] {
+    saveSettingsButton_ = new QPushButton(QStringLiteral("Save changes"));
+    saveSettingsButton_->setObjectName(QStringLiteral("primary"));
+    layout->addWidget(saveSettingsButton_, 0, Qt::AlignRight);
+    connect(saveSettingsButton_, &QPushButton::clicked, this, [this, page] {
         QJsonArray dns;
         for (const auto &part : dnsServers_->text().split(u',', Qt::SkipEmptyParts)) dns.append(part.trimmed());
         QJsonObject values{
@@ -487,33 +653,41 @@ QWidget *MainWindow::createSettingsPage()
             {QStringLiteral("preferredCountry"), preferredCountry_->text().trimmed().toUpper()},
             {QStringLiteral("customDns"), dns},
         };
-        rpc_.call(QStringLiteral("saveSettings"), values, [this](QJsonValue, QString error) {
+        page->setEnabled(false);
+        callService(QStringLiteral("saveSettings"), values, [this, page, values](QJsonValue, QString error) {
+            page->setEnabled(true);
             if (!error.isEmpty()) return showError(error);
-            selectedTechnology_ = technology_->currentData().toString();
-            selectedOpenVpnProtocol_ = openVpnProtocol_->currentData().toString();
+            selectedTechnology_ = values.value(QStringLiteral("technology")).toString();
+            selectedOpenVpnProtocol_ = values.value(QStringLiteral("openVpnProtocol")).toString();
             locations_ = {};
-            updateAutoStart(launchAtStartup_->isChecked());
+            updateLocationTable();
+            updateAutoStart(values.value(QStringLiteral("launchAtStartup")).toBool());
             refreshStatus();
-            QMessageBox::information(this, QStringLiteral("OpenNord"), QStringLiteral("Settings saved."));
+            statusBar()->showMessage(QStringLiteral("Settings saved. Tunnel changes apply on your next connection."), 6000);
         });
     });
-    return page;
+    return scrollable(page);
 }
 
 QWidget *MainWindow::createAccountPage()
 {
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(65, 50, 65, 45);
+    layout->setContentsMargins(40, 36, 40, 32);
+    layout->setSpacing(14);
     layout->addWidget(eyebrow(QStringLiteral("ACCOUNT & BUILD")));
     layout->addWidget(title(QStringLiteral("Your OpenNord")));
     accountName_ = new QLabel;
     accountName_->setObjectName(QStringLiteral("accountName"));
+    accountName_->setTextFormat(Qt::PlainText);
+    accountName_->setWordWrap(true);
     layout->addWidget(accountName_);
     layout->addWidget(body(QStringLiteral("Account credentials are encrypted by the LocalSystem service and isolated by your Windows SID.")));
     diagnostics_ = new QLabel;
     diagnostics_->setObjectName(QStringLiteral("diagnostics"));
     diagnostics_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    diagnostics_->setTextFormat(Qt::PlainText);
+    diagnostics_->setWordWrap(true);
     layout->addWidget(diagnostics_);
     layout->addStretch();
     auto *logout = new QPushButton(QStringLiteral("Sign out"));
@@ -521,26 +695,33 @@ QWidget *MainWindow::createAccountPage()
     layout->addWidget(logout, 0, Qt::AlignLeft);
     connect(logout, &QPushButton::clicked, this, [this] {
         if (QMessageBox::question(this, QStringLiteral("Sign out"), QStringLiteral("Disconnect and remove this Windows user's saved Nord session?")) != QMessageBox::Yes) return;
-        rpc_.call(QStringLiteral("logout"), {}, [this](QJsonValue, QString error) {
+        callService(QStringLiteral("logout"), {}, [this](QJsonValue, QString error) {
             if (!error.isEmpty()) return showError(error);
             refreshStatus();
         });
     });
-    return page;
+    return scrollable(page);
+}
+
+void MainWindow::callService(QString method, QJsonObject params, RpcClient::Callback callback)
+{
+    // Preview windows render and test the real UI without contacting SCM, the service, or the network.
+    if (serviceMode_ == ServiceMode::Preview) {
+        callback({}, QStringLiteral("Service calls are disabled in preview mode."));
+        return;
+    }
+    rpc_.call(std::move(method), std::move(params), std::move(callback));
 }
 
 void MainWindow::refreshStatus()
 {
+    if (serviceMode_ == ServiceMode::Preview) return;
     if (statusInFlight_) return;
     statusInFlight_ = true;
-    rpc_.call(QStringLiteral("status"), {}, [this](QJsonValue value, QString error) {
+    callService(QStringLiteral("status"), {}, [this](QJsonValue value, QString error) {
         statusInFlight_ = false;
         if (!error.isEmpty()) {
-            if (!authenticated_) pages_->setCurrentIndex(LoginPage);
-            loginServiceError_->setText(error);
-            loginServiceError_->show();
-            homeError_->setText(error);
-            homeError_->show();
+            showServiceUnavailable(error);
             return;
         }
         loginServiceError_->hide();
@@ -552,13 +733,17 @@ void MainWindow::applyStatus(const QJsonObject &state)
 {
     const auto wasAuthenticated = authenticated_;
     const auto engineWasReady = selectedEngineReady();
+    if (!serviceAvailable_ && !busy_) statusBar()->clearMessage();
+    serviceAvailable_ = true;
+    loginServiceError_->hide();
     authenticated_ = state.value(QStringLiteral("authenticated")).toBool();
     wireGuardReady_ = state.value(QStringLiteral("wireGuardReady")).toBool();
     openVpnReady_ = state.value(QStringLiteral("openVpnReady")).toBool();
     selectedTechnology_ = state.value(QStringLiteral("technology")).toString(QStringLiteral("nordlynx"));
     selectedOpenVpnProtocol_ = state.value(QStringLiteral("openVpnProtocol")).toString(QStringLiteral("udp"));
-    connectionStatus_ = state.value(QStringLiteral("status")).toString();
+    connectionStatus_ = state.value(QStringLiteral("status")).toString(QStringLiteral("unknown"));
     navigation_->setVisible(authenticated_);
+    updateConnectionControls();
     if (!authenticated_) {
         autoConnectAttempted_ = false;
         pages_->setCurrentIndex(LoginPage);
@@ -577,22 +762,40 @@ void MainWindow::applyStatus(const QJsonObject &state)
     const auto connected = connectionStatus_ == QStringLiteral("connected");
     const auto reconnecting = connectionStatus_ == QStringLiteral("reconnecting");
     const auto changing = connectionStatus_ == QStringLiteral("connecting") || connectionStatus_ == QStringLiteral("disconnecting");
-    homeTitle_->setText(connected ? QStringLiteral("Your connection is protected")
-        : reconnecting ? QStringLiteral("Re-establishing encrypted route")
-        : changing ? QStringLiteral("Changing encrypted route") : QStringLiteral("Ready when you are"));
+    const auto unknown = connectionStatus_ != QStringLiteral("connected") && connectionStatus_ != QStringLiteral("disconnected")
+        && connectionStatus_ != QStringLiteral("error") && !reconnecting && !changing;
+    homeTitle_->setText(connected ? QStringLiteral("Connected.\nStay private.")
+        : reconnecting ? QStringLiteral("Reconnecting\nyour route…")
+        : connectionStatus_ == QStringLiteral("connecting") ? QStringLiteral("Finding your\nprivate route…")
+        : connectionStatus_ == QStringLiteral("disconnecting") ? QStringLiteral("Closing your\nconnection…")
+        : unknown ? QStringLiteral("Checking your\nconnection…") : QStringLiteral("Ready when\nyou are."));
     const auto openVpn = selectedTechnology_ == QStringLiteral("openvpn");
     homeEyebrow_->setText(openVpn
-        ? QStringLiteral("OPENVPN · %1").arg(selectedOpenVpnProtocol_.toUpper())
-        : QStringLiteral("NORDLYNX · WIREGUARDNT"));
+        ? QStringLiteral("OPENVPN CONNECTION") : QStringLiteral("NORDLYNX CONNECTION"));
+    homeProtocol_->setText(openVpn ? QStringLiteral("OpenVPN · %1").arg(selectedOpenVpnProtocol_.toUpper())
+        : QStringLiteral("NordLynx · WireGuard"));
+    homeStatus_->setText(connected ? QStringLiteral("CONNECTED") : reconnecting ? QStringLiteral("RECONNECTING")
+        : changing ? connectionStatus_.toUpper() : unknown ? QStringLiteral("STATUS UNKNOWN") : QStringLiteral("NOT CONNECTED"));
+    const auto tone = connected ? QStringLiteral("connected") : reconnecting || changing ? QStringLiteral("pending") : QStringLiteral("idle");
+    setTone(homeStatus_, tone);
+    setTone(powerButton_, tone);
+    setTone(connectionArt_, tone);
     homeDescription_->setText(connected
         ? QStringLiteral("Traffic is routed through %1 with %2.")
             .arg(server.value(QStringLiteral("city")).toString(server.value(QStringLiteral("country")).toString()),
                  openVpn ? QStringLiteral("OpenVPN %1").arg(selectedOpenVpnProtocol_.toUpper()) : QStringLiteral("the native WireGuardNT tunnel"))
-        : reconnecting ? QStringLiteral("OpenVPN is retrying the selected route. Use the stop control to disconnect immediately.")
-        : QStringLiteral("One action selects a recommended low-load server and establishes the selected Windows tunnel."));
+        : reconnecting ? QStringLiteral("The tunnel is retrying the selected route. You can disconnect at any time.")
+        : changing ? QStringLiteral("Please wait while the VPN service updates your connection.")
+        : unknown ? QStringLiteral("The service has not reported a known tunnel state yet.")
+        : QStringLiteral("Connect to a recommended server, or explore the locations to find your next destination."));
     homeServer_->setText((connected || reconnecting) ? server.value(QStringLiteral("hostname")).toString() : QStringLiteral("Best available location"));
-    powerButton_->setText((connected || reconnecting) ? QStringLiteral("■") : QStringLiteral("⏻"));
-    powerButton_->setEnabled(!changing);
+    homeLocationHint_->setText((connected || reconnecting) ? QStringLiteral("%1 · %2")
+        .arg(server.value(QStringLiteral("city")).toString(), server.value(QStringLiteral("country")).toString())
+        : QStringLiteral("Recommended automatically"));
+    homeRoute_->setText(connected ? QStringLiteral("VPN tunnel established")
+        : reconnecting ? QStringLiteral("Waiting for the tunnel")
+        : changing ? QStringLiteral("Connection in progress")
+        : unknown ? QStringLiteral("Not verified") : QStringLiteral("No active VPN tunnel"));
     const auto error = state.value(QStringLiteral("error")).toString();
     homeError_->setVisible(!error.isEmpty());
     homeError_->setText(error);
@@ -606,10 +809,24 @@ void MainWindow::applyStatus(const QJsonObject &state)
 
 void MainWindow::loadLocations(bool force)
 {
+    if (locationsInFlight_) return;
     if (!force && !locations_.isEmpty()) return updateLocationTable();
-    locationCount_->setText(QStringLiteral("Loading every NordVPN location…"));
-    rpc_.call(QStringLiteral("locations"), {}, [this](QJsonValue value, QString error) {
-        if (!error.isEmpty()) return showError(error);
+    locationsInFlight_ = true;
+    updateConnectionControls();
+    locationCount_->setText(QStringLiteral("Loading locations…"));
+    const auto requestedTechnology = selectedTechnology_;
+    const auto requestedProtocol = selectedOpenVpnProtocol_;
+    callService(QStringLiteral("locations"), {}, [this, requestedTechnology, requestedProtocol](QJsonValue value, QString error) {
+        locationsInFlight_ = false;
+        updateConnectionControls();
+        if (requestedTechnology != selectedTechnology_ || requestedProtocol != selectedOpenVpnProtocol_) {
+            if (pages_->currentIndex() == LocationsPage) loadLocations(true);
+            return;
+        }
+        if (!error.isEmpty()) {
+            locationCount_->setText(QStringLiteral("Locations unavailable. Open Locations again to retry."));
+            return showError(error);
+        }
         locations_ = value.toArray();
         updateLocationTable();
     });
@@ -637,13 +854,16 @@ void MainWindow::updateLocationTable()
         count->setTextAlignment(Qt::AlignCenter);
         serverTable_->setItem(row, 2, count);
     }
-    locationCount_->setText(QStringLiteral("%1 of %2 locations").arg(serverTable_->rowCount()).arg(locations_.size()));
+    locationCount_->setText(serverTable_->rowCount() == 0 && !needle.isEmpty()
+        ? QStringLiteral("No matching locations. Try another country or city.")
+        : QStringLiteral("%1 of %2 locations").arg(serverTable_->rowCount()).arg(locations_.size()));
     if (serverTable_->rowCount() > 0) serverTable_->selectRow(0);
+    updateConnectionControls();
 }
 
 void MainWindow::loadSettings()
 {
-    rpc_.call(QStringLiteral("settings"), {}, [this](QJsonValue value, QString error) {
+    callService(QStringLiteral("settings"), {}, [this](QJsonValue value, QString error) {
         if (!error.isEmpty()) return;
         const auto settings = value.toObject();
         autoConnect_->setChecked(settings.value(QStringLiteral("autoConnect")).toBool());
@@ -659,25 +879,29 @@ void MainWindow::loadSettings()
         QStringList dns;
         for (const auto &address : settings.value(QStringLiteral("customDns")).toArray()) dns.append(address.toString());
         dnsServers_->setText(dns.join(QStringLiteral(", ")));
-        if (!autoConnectAttempted_ && autoConnect_->isChecked() && selectedEngineReady()
-            && connectionStatus_ == QStringLiteral("disconnected")) {
+        if (!autoConnectAttempted_ && selectedEngineReady()) {
             autoConnectAttempted_ = true;
-            rpc_.call(QStringLiteral("quickConnect"), {}, [this](QJsonValue, QString connectError) {
-                if (!connectError.isEmpty()) showError(connectError);
-            });
+            if (autoConnect_->isChecked() && connectionStatus_ == QStringLiteral("disconnected") && !busy_) {
+                setBusy(true, QStringLiteral("Connecting…"));
+                callService(QStringLiteral("quickConnect"), {}, [this](QJsonValue, QString connectError) {
+                    setBusy(false);
+                    if (!connectError.isEmpty()) showError(connectError);
+                    refreshStatus();
+                });
+            }
         }
     });
 }
 
 void MainWindow::loadAccount()
 {
-    rpc_.call(QStringLiteral("account"), {}, [this](QJsonValue value, QString error) {
+    callService(QStringLiteral("account"), {}, [this](QJsonValue value, QString error) {
         if (error.isEmpty()) {
             const auto user = value.toObject();
             accountName_->setText(user.value(QStringLiteral("email")).toString(user.value(QStringLiteral("username")).toString(QStringLiteral("Nord Account"))));
         }
     });
-    rpc_.call(QStringLiteral("diagnostics"), {}, [this](QJsonValue value, QString error) {
+    callService(QStringLiteral("diagnostics"), {}, [this](QJsonValue value, QString error) {
         if (!error.isEmpty()) return;
         const auto data = value.toObject();
         diagnostics_->setText(QStringLiteral("Version\t%1\nWireGuard\t%2\nOpenVPN\t%3\nTunnel config\t%4\nSession store\t%5\n\nGPLv3 · No telemetry")
@@ -725,14 +949,56 @@ void MainWindow::showError(const QString &message)
 
 void MainWindow::setBusy(bool busy, QString text)
 {
-    loginButton_->setEnabled(!busy);
-    powerButton_->setEnabled(!busy);
-    if (!text.isEmpty()) statusBar()->showMessage(text);
+    busy_ = busy;
+    busyText_ = std::move(text);
+    updateConnectionControls();
+    if (!busyText_.isEmpty()) statusBar()->showMessage(busyText_);
     else statusBar()->clearMessage();
+}
+
+void MainWindow::updateConnectionControls()
+{
+    const auto active = connectionStatus_ == QStringLiteral("connected") || connectionStatus_ == QStringLiteral("reconnecting");
+    const auto idle = connectionStatus_ == QStringLiteral("disconnected") || connectionStatus_ == QStringLiteral("error");
+    const auto canChange = serviceAvailable_ && authenticated_ && !busy_ && (active || idle);
+    loginButton_->setEnabled(serviceAvailable_ && !busy_);
+    tokenInput_->setEnabled(!busy_);
+    loginButton_->setText(busy_ && !authenticated_ ? QStringLiteral("Verifying…") : QStringLiteral("Continue securely"));
+    powerButton_->setEnabled(canChange && (active || selectedEngineReady()));
+    powerButton_->setText(busy_ ? (busyText_.isEmpty() ? QStringLiteral("Please wait…") : busyText_)
+        : connectionStatus_ == QStringLiteral("connecting") ? QStringLiteral("Connecting…")
+        : connectionStatus_ == QStringLiteral("disconnecting") ? QStringLiteral("Disconnecting…")
+        : active ? QStringLiteral("Disconnect") : QStringLiteral("Quick connect"));
+    powerButton_->setAccessibleName(powerButton_->text());
+    locationConnectButton_->setEnabled(canChange && selectedEngineReady() && !locationsInFlight_ && serverTable_->currentRow() >= 0);
+    saveSettingsButton_->setEnabled(serviceAvailable_ && authenticated_ && !busy_);
+}
+
+void MainWindow::showServiceUnavailable(const QString &error)
+{
+    serviceAvailable_ = false;
+    connectionStatus_ = QStringLiteral("unknown");
+    if (!authenticated_) pages_->setCurrentIndex(LoginPage);
+    loginServiceError_->setText(error);
+    loginServiceError_->show();
+    homeError_->setText(error);
+    homeError_->show();
+    homeStatus_->setText(QStringLiteral("STATUS UNAVAILABLE"));
+    homeTitle_->setText(QStringLiteral("Connection\nstatus unavailable"));
+    homeDescription_->setText(QStringLiteral("OpenNord cannot reach its VPN service. Your current protection could not be verified."));
+    homeRoute_->setText(QStringLiteral("Not verified"));
+    homeServer_->setText(QStringLiteral("Waiting for the VPN service"));
+    homeLocationHint_->setText(QStringLiteral("Status updates resume automatically"));
+    setTone(homeStatus_, QStringLiteral("pending"));
+    setTone(powerButton_, QStringLiteral("idle"));
+    setTone(connectionArt_, QStringLiteral("idle"));
+    statusBar()->showMessage(QStringLiteral("VPN service unavailable · Connection status could not be verified"));
+    updateConnectionControls();
 }
 
 void MainWindow::updateAutoStart(bool enabled)
 {
+    if (serviceMode_ == ServiceMode::Preview) return;
     QSettings registry(QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"), QSettings::NativeFormat);
     if (enabled) registry.setValue(QStringLiteral("OpenNord"), QStringLiteral("\"%1\"").arg(QDir::toNativeSeparators(QCoreApplication::applicationFilePath())));
     else registry.remove(QStringLiteral("OpenNord"));
@@ -741,37 +1007,66 @@ void MainWindow::updateAutoStart(bool enabled)
 void MainWindow::applyTheme()
 {
     qApp->setStyleSheet(QStringLiteral(R"(
-        * { font-family: "Aptos", "Segoe UI Variable"; color: #eaf2f3; font-size: 13px; }
-        QMainWindow, QWidget { background: #07111c; }
-        #sidebar { background: #061019; border-right: 1px solid rgba(164,201,206,35); }
-        #brand { font-family: "Bahnschrift SemiCondensed"; font-size: 19px; font-weight: 600; color: #eaf2f3; margin-bottom: 26px; }
+        * { font-family: "Segoe UI"; color: #e8eff4; font-size: 13px; }
+        QMainWindow, QWidget { background: #0b1521; }
+        QLabel { background: transparent; }
+        QScrollArea { border: 0; }
+        #sidebar { background: #08111b; border-right: 1px solid #1a2b39; }
+        #brand { font-size: 22px; font-weight: 700; color: #f3f8fa; }
+        #sidebarCaption { color: #748b9e; font-size: 9px; letter-spacing: 2px; padding-left: 3px; }
         #navigation { border: 0; outline: 0; background: transparent; }
-        #navigation::item { min-height: 46px; padding-left: 14px; border-radius: 6px; color: #82929f; }
-        #navigation::item:selected { color: #63e6cf; background: rgba(99,230,207,28); border-left: 2px solid #63e6cf; }
-        #privacy { color: #70818e; font-size: 10px; line-height: 1.5; }
-        #eyebrow { color: #63e6cf; font-size: 10px; font-weight: 600; letter-spacing: 2px; }
-        #pageTitle { font-family: "Bahnschrift SemiCondensed"; font-size: 48px; font-weight: 600; line-height: .95; }
-        #bodyText { color: #82929f; font-size: 13px; line-height: 1.5; }
+        #navigation::item { min-height: 46px; padding-left: 16px; margin-bottom: 6px; border-radius: 8px; color: #91a7b8; }
+        #navigation::item:hover { color: #edf5f7; background: #112331; }
+        #navigation::item:selected { color: #8bf1d9; background: #143631; font-weight: 600; }
+        #privacy { color: #7e94a5; font-size: 10px; }
+        #eyebrow { color: #80bfb6; font-size: 10px; font-weight: 600; letter-spacing: 1px; }
+        #pageTitle { font-size: 36px; font-weight: 600; color: #f4f8fa; }
+        #bodyText { color: #a0b3c2; font-size: 13px; }
+        #heroCard { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #142b38, stop:1 #10212f); border: 1px solid #264250; border-radius: 16px; }
+        #heroCard QWidget { background: transparent; }
+        #surfaceCard { background: #112330; border: 1px solid #253d4c; border-radius: 12px; }
+        #detailCard { background: #0e1e2b; border: 1px solid #203442; border-radius: 10px; }
+        #statusBadge { color: #acbfcc; background: #182c3b; border: 1px solid #2b4354; border-radius: 12px; padding: 6px 12px; font-size: 10px; font-weight: 600; letter-spacing: 1px; }
+        #statusBadge[tone="connected"] { color: #8bf1d9; background: #143b33; border-color: #28604e; }
+        #statusBadge[tone="pending"] { color: #f4ca87; background: #352c20; border-color: #665036; }
         #fieldLabel { font-weight: 600; margin-top: 6px; }
-        QLineEdit, QComboBox { min-height: 40px; padding: 0 12px; color: #eaf2f3; background: #091a27; border: 1px solid #233844; border-radius: 5px; selection-background-color: #28796f; }
-        QLineEdit:focus, QComboBox:focus { border-color: #4da99b; }
-        QComboBox QAbstractItemView { color: #eaf2f3; background: #091a27; selection-background-color: #19463f; border: 1px solid #233844; }
-        QPushButton { min-height: 40px; padding: 0 18px; border-radius: 5px; border: 1px solid #29414d; background: #0b1d29; }
-        QPushButton:hover { border-color: #63e6cf; }
-        #primary { color: #05201d; background: #63e6cf; border: 0; font-weight: 600; }
-        #primary:hover { background: #86f3df; }
+        QLineEdit, QComboBox { min-height: 42px; padding: 0 12px; color: #eaf2f3; background: #101f2d; border: 1px solid #304656; border-radius: 8px; selection-background-color: #28796f; }
+        QLineEdit:focus, QComboBox:focus { border: 1px solid #75ead1; }
+        QLineEdit:disabled, QComboBox:disabled { color: #6d8293; background: #101b27; border-color: #223441; }
+        QComboBox QAbstractItemView { color: #eaf2f3; background: #112532; selection-background-color: #215044; border: 1px solid #304656; }
+        QPushButton { min-height: 42px; padding: 0 18px; border-radius: 8px; border: 1px solid #365362; background: #172c3a; font-weight: 600; }
+        QPushButton:hover { background: #1e3a49; border-color: #75ead1; }
+        QPushButton:focus { border: 2px solid #b2ffee; }
+        QPushButton:pressed { background: #234a55; }
+        #primary, #connectButton { color: #082a25; background: #75ead1; border: 1px solid #75ead1; font-weight: 600; }
+        #primary:hover, #connectButton:hover { background: #9af3de; }
+        #connectButton[tone="connected"] { color: #c1e5df; background: #193a38; border-color: #48756c; }
+        #connectButton[tone="connected"]:hover { background: #23504a; }
         #secondary { background: transparent; }
-        #linkButton { color: #63e6cf; background: transparent; border: 0; }
+        #linkButton { color: #83dcca; background: transparent; border: 1px solid transparent; padding-left: 0; text-align: left; }
+        #linkButton:hover { color: #b6ffed; }
+        #linkButton:focus { border-color: #75ead1; }
         #danger { color: #ffbfc1; background: rgba(255,111,114,22); border-color: rgba(255,111,114,70); }
-        #powerButton { border-radius: 38px; color: #63e6cf; border: 1px solid #4da99b; background: rgba(99,230,207,20); font-size: 27px; }
-        #powerButton:hover { background: rgba(99,230,207,38); }
-        #connectionServer, #accountName { font-family: "Bahnschrift SemiCondensed"; font-size: 20px; font-weight: 600; }
-        #errorBanner { color: #ffbfc1; background: rgba(255,111,114,18); border-left: 2px solid #ff6f72; padding: 10px; }
-        QTableWidget { background: #081721; border: 1px solid #1e333e; gridline-color: #172b35; selection-background-color: rgba(99,230,207,28); }
-        QHeaderView::section { min-height: 35px; color: #82929f; background: #091a27; border: 0; border-bottom: 1px solid #233844; padding: 6px; }
-        QCheckBox { padding: 8px; border-bottom: 1px solid #172b35; }
-        #diagnostics { color: #aab8be; background: #081721; border: 1px solid #1e333e; padding: 20px; font-family: "Cascadia Mono"; font-size: 11px; }
-        QStatusBar { color: #63e6cf; background: #061019; }
+        QPushButton:disabled, #primary:disabled, #connectButton:disabled { color: #8098a8; background: #1a2d3a; border-color: #2a4050; }
+        #connectionServer, #accountName { font-size: 19px; font-weight: 600; }
+        #errorBanner { color: #ffc4bc; background: #352427; border: 1px solid #674247; border-radius: 8px; padding: 12px; }
+        QTableWidget { background: #10212e; alternate-background-color: #122633; border: 1px solid #2a4050; border-radius: 8px; selection-background-color: #205044; selection-color: #e7fff6; }
+        QTableWidget::item { padding: 0 12px; border-bottom: 1px solid #1c3442; }
+        QHeaderView::section { min-height: 35px; color: #9db5c5; background: #142a38; border: 0; border-bottom: 1px solid #304656; padding: 8px 12px; font-weight: 600; }
+        QCheckBox { spacing: 12px; padding: 6px 0; border-bottom: 1px solid #1d3242; }
+        QCheckBox:disabled { color: #788d9d; }
+        QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #668392; border-radius: 4px; background: #10212e; }
+        QCheckBox::indicator:checked { background: #75ead1; border: 3px solid #28796f; }
+        QCheckBox::indicator:disabled { border-color: #304656; background: #172733; }
+        #diagnostics { color: #b6c8d4; background: #10212e; border: 1px solid #2a4050; border-radius: 10px; padding: 20px; font-family: "Consolas"; font-size: 12px; }
+        QStatusBar { color: #a4cfc5; background: #08111b; }
+        QMenu { background: #112532; border: 1px solid #304656; padding: 6px; }
+        QMenu::item { padding: 8px 24px; }
+        QMenu::item:selected { background: #215044; }
+        QScrollBar:vertical { background: #0b1521; width: 10px; margin: 0; }
+        QScrollBar::handle:vertical { background: #304858; border-radius: 5px; min-height: 30px; }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
     )"));
 }
 

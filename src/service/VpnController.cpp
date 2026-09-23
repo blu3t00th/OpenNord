@@ -10,7 +10,6 @@
 #include <QHostAddress>
 #include <QRandomGenerator>
 #include <QRegularExpression>
-#include <QSaveFile>
 
 namespace opennord {
 namespace {
@@ -350,9 +349,10 @@ ControllerReply VpnController::saveSettings(const ClientContext &client, const Q
     if (!next.preferredCountry.isEmpty() && !QRegularExpression(QStringLiteral("^[A-Z]{2}$")).match(next.preferredCountry).hasMatch()) {
         return failure(QStringLiteral("invalid_settings"), QStringLiteral("preferred country must be a two-letter code"));
     }
-    for (const auto &dns : next.customDns) {
-        QHostAddress address;
-        if (!address.setAddress(dns)) return failure(QStringLiteral("invalid_settings"), QStringLiteral("invalid DNS address: %1").arg(dns));
+    for (auto &dns : next.customDns) {
+        const auto address = normalizedDnsAddress(dns);
+        if (!address.has_value()) return failure(QStringLiteral("invalid_settings"), QStringLiteral("DNS must be an IP address without an interface scope"));
+        dns = *address;
     }
     if (next.killSwitch) next.allowLan = false;
     session.value.settings = next;
@@ -392,13 +392,9 @@ void VpnController::setFailure(QString error)
 QString VpnController::persistConnectionOwner(const QString &sid, TunnelTechnology technology)
 {
     if (!QDir().mkpath(QFileInfo(connectionOwnerPath_).absolutePath())) return QStringLiteral("cannot create service state directory");
-    QSaveFile file(connectionOwnerPath_);
     const auto data = sid.toUtf8() + '\n' + technologyName(technology).toUtf8() + '\n';
-    if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size() || !file.commit()) {
-        return QStringLiteral("cannot persist active connection owner");
-    }
     QString error;
-    if (!windows::applyPrivateFileAcl(connectionOwnerPath_, {}, false, error)) return error;
+    if (!windows::writePrivateFile(connectionOwnerPath_, data, error)) return error;
     return {};
 }
 

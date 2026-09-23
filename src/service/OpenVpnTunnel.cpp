@@ -7,7 +7,6 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QRandomGenerator>
-#include <QSaveFile>
 #include <QScopeGuard>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -96,20 +95,11 @@ QString OpenVpnTunnel::connect(const Credentials &credentials, const Server &ser
 
     const auto config = buildOpenVpnConfig(signedProfile, server, settings, managementPort_, managementPasswordPath_);
     if (!config.ok()) return config.error;
-    QSaveFile passwordFile(managementPasswordPath_);
     const auto passwordBytes = managementPassword_.toUtf8() + '\n';
-    if (!passwordFile.open(QIODevice::WriteOnly) || passwordFile.write(passwordBytes) != passwordBytes.size() || !passwordFile.commit()) {
-        return QStringLiteral("cannot write OpenVPN management password");
-    }
-    QSaveFile configFile(configPath_);
-    const auto configBytes = config.value.toUtf8();
-    if (!configFile.open(QIODevice::WriteOnly) || configFile.write(configBytes) != configBytes.size() || !configFile.commit()) {
-        cleanupFiles();
-        return QStringLiteral("cannot write OpenVPN configuration");
-    }
     QString aclError;
-    if (!windows::applyPrivateFileAcl(managementPasswordPath_, {}, false, aclError)
-        || !windows::applyPrivateFileAcl(configPath_, {}, false, aclError)) {
+    if (!windows::writePrivateFile(managementPasswordPath_, passwordBytes, aclError)) return aclError;
+    const auto configBytes = config.value.toUtf8();
+    if (!windows::writePrivateFile(configPath_, configBytes, aclError)) {
         cleanupFiles();
         return aclError;
     }

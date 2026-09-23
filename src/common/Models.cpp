@@ -1,8 +1,16 @@
 #include "common/Models.h"
 
 #include <QJsonValue>
+#include <QHostAddress>
 
 namespace opennord {
+
+std::optional<QString> normalizedDnsAddress(const QString &candidate)
+{
+    QHostAddress address;
+    if (!address.setAddress(candidate.trimmed()) || !address.scopeId().isEmpty()) return std::nullopt;
+    return address.toString();
+}
 
 QJsonObject Location::toJson() const
 {

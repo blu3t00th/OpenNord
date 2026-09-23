@@ -215,7 +215,7 @@ ApiResult<QVector<Server>> NordApiClient::recommendedServers(const Settings &set
 
 ApiResult<QByteArray> NordApiClient::openVpnConfig(const Server &server, OpenVpnProtocol protocol) const
 {
-    static const QRegularExpression hostnamePattern(QStringLiteral("^[a-z]{2}[0-9]{1,6}\\.nordvpn\\.com$"));
+    static const QRegularExpression hostnamePattern(QStringLiteral("\\A[a-z]{2}[0-9]{1,6}\\.nordvpn\\.com\\z"));
     if (!hostnamePattern.match(server.hostname).hasMatch()) return {{}, QStringLiteral("configuration_failed"), QStringLiteral("server hostname is invalid")};
     const auto protocolName = openVpnProtocolName(protocol);
     const auto url = QUrl(QStringLiteral("https://downloads.nordcdn.com/configs/files/ovpn_%1/servers/%2.%1.ovpn")

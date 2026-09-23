@@ -6,7 +6,6 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
-#include <QSaveFile>
 
 namespace opennord {
 
@@ -46,11 +45,7 @@ QString SecureStore::save(const QString &sid, const Session &session) const
     QString error;
     const auto encrypted = windows::protectForMachine(QJsonDocument(session.toJson()).toJson(QJsonDocument::Compact), error);
     if (!error.isEmpty()) return error;
-    QSaveFile file(pathFor(sid));
-    if (!file.open(QIODevice::WriteOnly) || file.write(encrypted) != encrypted.size() || !file.commit()) {
-        return QStringLiteral("cannot write encrypted session");
-    }
-    if (!windows::applyPrivateFileAcl(pathFor(sid), {}, false, error)) return error;
+    if (!windows::writePrivateFile(pathFor(sid), encrypted, error)) return error;
     return {};
 }
 

@@ -22,6 +22,21 @@ void log(const QString &message)
     logging::write(logging::Target::Service, QStringLiteral("named-pipe"), message);
 }
 
+windows::UniqueHandle createPipe(bool firstInstance, QString &error)
+{
+    PSECURITY_DESCRIPTOR descriptor{};
+    auto attributes = windows::pipeSecurityAttributes(descriptor, error);
+    if (!descriptor) return {};
+    const auto cleanup = qScopeGuard([&] { LocalFree(descriptor); });
+    windows::UniqueHandle pipe(CreateNamedPipeW(
+        protocol::PipeName,
+        PIPE_ACCESS_DUPLEX | (firstInstance ? FILE_FLAG_FIRST_PIPE_INSTANCE : 0),
+        PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+        16, protocol::MaxFrameSize + 4, protocol::MaxFrameSize + 4, 0, &attributes));
+    if (!pipe) error = QStringLiteral("cannot reserve service pipe: %1").arg(windows::lastErrorMessage());
+    return pipe;
+}
+
 bool readExact(HANDLE pipe, char *data, DWORD size)
 {
     DWORD offset{};
@@ -52,15 +67,15 @@ NamedPipeServer::~NamedPipeServer() { stop(); }
 bool NamedPipeServer::start(QString &error)
 {
     if (running_.exchange(true)) return true;
-    PSECURITY_DESCRIPTOR descriptor{};
-    [[maybe_unused]] const auto attributes = windows::pipeSecurityAttributes(descriptor, error);
-    if (!descriptor) {
-        log(QStringLiteral("cannot initialize pipe security: %1").arg(error));
+    auto pipe = createPipe(true, error);
+    if (!pipe) {
+        log(error);
         running_ = false;
         return false;
     }
-    LocalFree(descriptor);
-    acceptThread_ = std::jthread([this](std::stop_token token) { acceptLoop(token); });
+    acceptThread_ = std::jthread([this, pipe = std::move(pipe)](std::stop_token token) mutable {
+        acceptLoop(token, pipe.release());
+    });
     error.clear();
     return true;
 }
@@ -79,37 +94,30 @@ void NamedPipeServer::stop()
     clients_.clear();
 }
 
-void NamedPipeServer::acceptLoop(std::stop_token stopToken)
+void NamedPipeServer::acceptLoop(std::stop_token stopToken, void *initialPipe)
 {
+    windows::UniqueHandle pipe(static_cast<HANDLE>(initialPipe));
     while (running_ && !stopToken.stop_requested()) {
-        QString securityError;
-        PSECURITY_DESCRIPTOR descriptor{};
-        auto attributes = windows::pipeSecurityAttributes(descriptor, securityError);
-        if (!descriptor) {
-            log(QStringLiteral("cannot create pipe security descriptor: %1").arg(securityError));
-            return;
-        }
-        windows::UniqueHandle pipe(CreateNamedPipeW(
-            protocol::PipeName,
-            PIPE_ACCESS_DUPLEX,
-            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
-            16,
-            protocol::MaxFrameSize + 4,
-            protocol::MaxFrameSize + 4,
-            0,
-            &attributes));
-        LocalFree(descriptor);
-        if (!pipe) {
-            log(QStringLiteral("CreateNamedPipe failed: %1").arg(windows::lastErrorMessage()));
-            return;
-        }
         const auto connected = ConnectNamedPipe(pipe.get(), nullptr) || GetLastError() == ERROR_PIPE_CONNECTED;
-        if (!connected) continue;
+        if (!connected) {
+            DisconnectNamedPipe(pipe.get());
+            continue;
+        }
         if (!running_ || stopToken.stop_requested()) return;
         auto done = std::make_shared<std::atomic_bool>(false);
         std::scoped_lock lock(clientsMutex_);
         std::erase_if(clients_, [](const ClientWorker &worker) { return worker.done->load(); });
+        // Keep one service-owned instance alive between requests. At capacity,
+        // reject this connection and reuse the listener instead of killing IPC.
+        QString nextError;
+        auto nextPipe = createPipe(false, nextError);
+        if (!nextPipe) {
+            log(nextError);
+            DisconnectNamedPipe(pipe.get());
+            continue;
+        }
         auto *rawPipe = pipe.release();
+        pipe = std::move(nextPipe);
         clients_.push_back(ClientWorker{
             std::jthread([this, rawPipe, done](std::stop_token) {
                 serveClient(rawPipe);

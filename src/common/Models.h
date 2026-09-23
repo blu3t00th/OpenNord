@@ -110,5 +110,7 @@ struct State {
 [[nodiscard]] QString statusName(ConnectionStatus status);
 [[nodiscard]] QString technologyName(TunnelTechnology technology);
 [[nodiscard]] QString openVpnProtocolName(OpenVpnProtocol protocol);
+// Tunnel DNS settings accept IP literals only; interface scopes are not supported.
+[[nodiscard]] std::optional<QString> normalizedDnsAddress(const QString &candidate);
 
 }

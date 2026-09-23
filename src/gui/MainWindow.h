@@ -25,12 +25,14 @@ class MainWindow final : public QMainWindow
 {
     Q_OBJECT
 public:
-    explicit MainWindow(QWidget *parent = nullptr);
+    enum class ServiceMode { Live, Preview };
+    explicit MainWindow(QWidget *parent = nullptr, ServiceMode serviceMode = ServiceMode::Live);
 
 protected:
     void closeEvent(QCloseEvent *event) override;
 
 private:
+    friend class MainWindowTests;
     QWidget *createLoginPage();
     QWidget *createHomePage();
     QWidget *createLocationsPage();
@@ -39,6 +41,7 @@ private:
     QWidget *createDependencyPage();
     QWidget *createSidebar();
     void applyTheme();
+    void callService(QString method, QJsonObject params, RpcClient::Callback callback);
     void refreshStatus();
     void applyStatus(const QJsonObject &state);
     void loadLocations(bool force = false);
@@ -46,6 +49,8 @@ private:
     void loadAccount();
     void showError(const QString &message);
     void setBusy(bool busy, QString text = {});
+    void updateConnectionControls();
+    void showServiceUnavailable(const QString &error);
     void updateLocationTable();
     void updateAutoStart(bool enabled);
     void updateTechnologyControls();
@@ -55,16 +60,21 @@ private:
     [[nodiscard]] bool selectedEngineReady() const;
 
     RpcClient rpc_;
+    ServiceMode serviceMode_;
     QStackedWidget *pages_{};
     QListWidget *navigation_{};
     QTimer *statusTimer_{};
     bool statusInFlight_{};
+    bool busy_{};
+    bool serviceAvailable_{};
+    bool locationsInFlight_{};
     bool authenticated_{};
     bool wireGuardReady_{};
     bool openVpnReady_{};
     bool autoConnectAttempted_{};
     bool exiting_{};
     QString connectionStatus_;
+    QString busyText_;
     QString selectedTechnology_{QStringLiteral("nordlynx")};
     QString selectedOpenVpnProtocol_{QStringLiteral("udp")};
     QJsonArray locations_;
@@ -77,8 +87,15 @@ private:
     QLabel *homeTitle_{};
     QLabel *homeDescription_{};
     QLabel *homeServer_{};
+    QLabel *homeStatus_{};
+    QLabel *homeRoute_{};
+    QLabel *homeProtocol_{};
+    QLabel *homeLocationHint_{};
+    QWidget *connectionArt_{};
     QLabel *homeError_{};
     QPushButton *powerButton_{};
+    QPushButton *locationConnectButton_{};
+    QPushButton *saveSettingsButton_{};
     QLineEdit *serverSearch_{};
     QTableWidget *serverTable_{};
     QLabel *locationCount_{};

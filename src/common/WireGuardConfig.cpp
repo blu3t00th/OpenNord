@@ -9,8 +9,9 @@ namespace {
 
 bool validKey(const QString &key)
 {
-    const auto decoded = QByteArray::fromBase64(key.trimmed().toLatin1(), QByteArray::AbortOnBase64DecodingErrors);
-    return decoded.size() == 32;
+    const auto encoded = key.trimmed().toLatin1();
+    const auto decoded = QByteArray::fromBase64(encoded, QByteArray::AbortOnBase64DecodingErrors);
+    return decoded.size() == 32 && decoded.toBase64() == encoded;
 }
 
 }
@@ -30,11 +31,11 @@ ConfigResult buildWireGuardConfig(const Credentials &credentials, const Server &
 
     QStringList dns;
     for (const auto &candidate : settings.customDns) {
-        QHostAddress address;
-        if (!address.setAddress(candidate.trimmed())) {
+        const auto address = normalizedDnsAddress(candidate);
+        if (!address.has_value()) {
             return {{}, QStringLiteral("custom DNS address is invalid: %1").arg(candidate)};
         }
-        dns.append(address.toString());
+        dns.append(*address);
     }
     if (dns.isEmpty()) {
         dns = {QStringLiteral("103.86.96.100"), QStringLiteral("103.86.99.100")};
@@ -54,7 +55,7 @@ ConfigResult buildWireGuardConfig(const Credentials &credentials, const Server &
         "AllowedIPs = %4\n"
         "Endpoint = %5:51820\n"
         "PersistentKeepalive = 25\n")
-        .arg(credentials.nordLynxPrivateKey.trimmed(), dns.join(QStringLiteral(", ")), server.publicKey.trimmed(), allowed, server.station), {}};
+        .arg(credentials.nordLynxPrivateKey.trimmed(), dns.join(QStringLiteral(", ")), server.publicKey.trimmed(), allowed, endpoint.toString()), {}};
 }
 
 }

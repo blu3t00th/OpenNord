@@ -18,6 +18,7 @@ struct SecurityResult {
 [[nodiscard]] QByteArray protectForMachine(const QByteArray &plain, QString &error);
 [[nodiscard]] QByteArray unprotectForMachine(const QByteArray &ciphertext, QString &error);
 [[nodiscard]] bool applyPrivateFileAcl(const QString &path, const QString &userSid, bool userCanWrite, QString &error);
+[[nodiscard]] bool writePrivateFile(const QString &path, const QByteArray &contents, QString &error);
 [[nodiscard]] SECURITY_ATTRIBUTES pipeSecurityAttributes(PSECURITY_DESCRIPTOR &descriptor, QString &error);
 
 }
