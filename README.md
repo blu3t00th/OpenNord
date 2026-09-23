@@ -1,6 +1,8 @@
-<img width="1651" height="1183" alt="image" src="https://github.com/user-attachments/assets/c03b1c40-32da-490f-bde3-8d647dcb086a" />
+<img width="1180" height="824" alt="{1402C81E-2606-4886-8B76-04C36E070758}" src="https://github.com/user-attachments/assets/65b1b311-8c70-4c63-98dc-d4bce1166169" />
 
-<img width="1839" height="1187" alt="image" src="https://github.com/user-attachments/assets/d82df6ee-6c94-46db-8a83-00a05ab28f9d" />
+
+<img width="1186" height="831" alt="{9429CC6D-3058-4C95-B4C1-6462FE1E7F85}" src="https://github.com/user-attachments/assets/a5666a9a-bed2-4521-a48a-7dc85525dfb0" />
+
 
 OpenNord is under active development. Review the security notes and test a
 release before relying on it for VPN connectivity. Login currently uses a
